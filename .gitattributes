@@ -1,0 +1,17 @@
+# Normalizar finales de línea
+* text=auto
+
+# Jupyter notebooks (mejor diff)
+*.ipynb filter=nbstripout
+
+# Archivos binarios
+*.h5 binary
+*.pt binary
+*.pth binary
+
+# Archivos grandes (usando Git LFS)
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.psd filter=lfs diff=lfs merge=lfs -text
+*.tif filter=lfs diff=lfs merge=lfs -text
+*.h5 filter=lfs diff=lfs merge=lfs -text
+*.mp4 filter=lfs diff=lfs merge=lfs -text

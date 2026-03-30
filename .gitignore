@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.exe
+
+# Entornos virtuales
+venv/
+.env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Datos (muy importante)
+Datos/
+*.csv
+*.xlsx
+
+# Modelos pesados
+*.h5
+*.keras
+*.pt
+*.pth
+
+# Logs
+*.log
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# No es necesario subirlo
+Deep Learning/
