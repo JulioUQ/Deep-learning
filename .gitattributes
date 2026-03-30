@@ -1,17 +1,18 @@
-# Normalizar finales de línea
-* text=auto
+# Normalizar finales de línea (SIEMPRE LF en repo)
+* text=auto eol=lf
 
-# Jupyter notebooks (mejor diff)
+# Windows scripts (si algún día tienes .bat)
+*.bat text eol=crlf
+
+# Jupyter notebooks (sin outputs)
 *.ipynb filter=nbstripout
 
-# Archivos binarios
+# Archivos binarios (modelos)
 *.h5 binary
 *.pt binary
 *.pth binary
 
-# Archivos grandes (usando Git LFS)
+# Git LFS (archivos pesados)
 *.zip filter=lfs diff=lfs merge=lfs -text
-*.psd filter=lfs diff=lfs merge=lfs -text
-*.tif filter=lfs diff=lfs merge=lfs -text
-*.h5 filter=lfs diff=lfs merge=lfs -text
 *.mp4 filter=lfs diff=lfs merge=lfs -text
+*.tif filter=lfs diff=lfs merge=lfs -text
