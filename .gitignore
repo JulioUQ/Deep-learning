@@ -13,7 +13,7 @@ venv/
 .ipynb_checkpoints/
 
 # Datos (muy importante)
-Módulo 2 - Redes neuronales convolucionales (CNN)/Data/apollo2506/
+**/apollo2506/
 
 #*.csv
 
