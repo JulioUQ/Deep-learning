@@ -2,6 +2,8 @@
 
 Dataset de imágenes satelitales para la **clasificación automática de tipos de uso del suelo**.
 
+> Debido al peso de los datos no se han incluido en el repositorio, si se quieren utilizar el enlace se encuentra o en el cuaderno jupyter de la PEC o en la descripcion del repositorio.
+
 ## 1. Objetivo del dataset
 
 El objetivo principal de este conjunto de datos es **identificar y clasificar diferentes tipos de uso del suelo en imágenes satelitales**.

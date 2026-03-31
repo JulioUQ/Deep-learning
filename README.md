@@ -122,15 +122,6 @@ El semestre incluye:
 
  ----
 
-# Entorno de trabajo para RNN
+# Requirements
 
-## Crear entorno con Python 3.12
-py -3.12 -m venv tf-env
-
-## Activarlo
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
-tf-env\Scripts\activate
-
-## Ahora python apunta a 3.12 y puedes instalar TensorFlow
-python -m pip install --upgrade pip
-python -m pip install tensorflow numpy pandas matplotlib scikit-learn torch tensorflow-datasets
+py -3.12 -m pip install -r requirements.txt
