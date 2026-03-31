@@ -462,7 +462,15 @@ Generando secuencias para window_size = 168...
 
 ## 1.4. Definición y Construcción del Modelo RNN
 
-Ahora que los datos están almacenados en el diccionario, lanzamos el bucle que construye y entrena los modelos uno por uno. Por lo tanto, aquí creamos los modelos. Para poder usarlos después, los guardaremos en un diccionario llamado `trained_models` y sus historiales en `trained_histories`.
+Una vez organizados los datos en el diccionario, se pone en marcha el bucle encargado de construir y entrenar los modelos de forma secuencial. Cada configuración se entrena de manera independiente y, para poder analizarlas posteriormente, los modelos resultantes se almacenan en el diccionario `trained_models`, mientras que sus historiales de entrenamiento se guardan en `trained_histories`.
+
+Al revisar el `model.summary()` aparece un detalle especialmente interesante, y es que el número total de parámetros (4.673) es exactamente el mismo para los tres tamaños de ventana. Esto es debido a que en una RNN, los pesos no dependen de la longitud de la secuencia de entrada, sino que se **comparten a lo largo de todos los pasos temporales**. Es decir, la red utiliza la misma 'memoria' para procesar cada instante, independientemente de si la ventana abarca 24, 48 o 168 horas. Por eso, ampliar la ventana no incrementa el número de parámetros.
+
+Si se desglosa el cálculo, se entiende mejor.
+* La capa SimpleRNN con 64 unidades concentra la mayor parte de los parámetros, combinando los pesos de entrada (7 × 64), los pesos recurrentes (64 × 64) y los sesgos, lo que suma 4.608 parámetros. 
+* A esto se añade la capa densa final, que conecta las 64 salidas de la RNN con una única neurona, aportando 65 parámetros adicionales. 
+* El resultado total es, por tanto, 4.673 parámetros, idéntico en todos los modelos al no depender del tamaño de la ventana temporal.
+
 
 ```python
 # Guardar modelos e historiales de entrenamiento
@@ -554,7 +562,13 @@ Model: "sequential_6"
 
 ## 1.5. Cálculo de Métricas (RMSE y MAE)
 
-Calculamos los errores para los tres subconjuntos (Train, Val, Test). Para que el error sea interpretable en grados centígrados ($^\circ C$), aplicamos la transformación inversa con el `target_scaler`.
+Para evaluar el rendimiento del modelo, se calcularon las métricas de error (RMSE y MAE) en los tres subconjuntos (entrenamiento, validación y test) aplicando previamente la transformación inversa del `target_scaler` para expresar los resultados en grados Celsius, lo que facilita su interpretación directa.
+
+El análisis de los resultados muestra con bastante claridad que la **ventana de 24 horas es la más adecuada**. Este modelo, que utiliza un horizonte temporal equivalente a un día, es el que mejor equilibra ajuste y capacidad de generalización, obteniendo los errores más bajos especialmente en validación y test.
+
+A medida que se amplía la ventana temporal a 48 y, sobre todo, a 168 horas, el rendimiento empeora de forma progresiva. Este comportamiento sugiere que la arquitectura SimpleRNN tiene dificultades para manejar dependencias largas, perdiendo eficacia cuando la secuencia de entrada crece demasiado.
+
+Un aspecto llamativo aparece al comparar los errores entre conjuntos: el RMSE en entrenamiento (1.04) es superior al de test (0.69) en la mejor configuración. Aunque no es lo habitual, este fenómeno puede darse en series temporales cuando el tramo final de los datos (utilizado como test) presenta un comportamiento más estable o menos ruidoso que el inicial, lo que facilita las predicciones.
 
 ```python
 results_list = []
@@ -605,9 +619,13 @@ Window Size Conjunto RMSE MAE
 
 ## 1.6. Visualización de Loss y Predicciones
 
-Este último bloque genera las gráficas de aprendizaje (Loss) y la comparación visual entre el valor real y la predicción en el conjunto de Test.
+Continuamos centrandonos en dos aspectos fundamentales: 1) las curvas de aprendizaje (*loss*); y 2) la comparación visual entre los valores reales y las predicciones en el conjunto de test.
 
-El conjunto de test tiene unas 2613 horas, de modo que al dibujar todos los puntos en un solo gráfico se puede observar que las lineas azules (real) y rojas (predicha) se amontontan tanto que se acaba viendo una 'mancha' de color. No permitiendo por tanto distinguir si el modelo falla mucho o poco.
+Dado que el conjunto de test abarca unas 2613 horas, representar todos los puntos en un único gráfico provoca que las líneas (la azul para los valores reales y la roja para las predicciones) se superpongan hasta formar una especie de 'mancha' de color. Esta densidad dificulta distinguir con precisión el grado de acierto del modelo, ya que los errores quedan visualmente diluidos.
+
+En cuanto a las **curvas de *loss***, se observa un comportamiento claro y consistente. Tanto el error de entrenamiento como el de validación descienden con rapidez en las primeras épocas y después se estabilizan. Este patrón indica que el mecanismo de *EarlyStopping* ha actuado correctamente, deteniendo el entrenamiento en el momento adecuado. Además, la convergencia es suave y sin oscilaciones bruscas, lo que sugiere que el ratio de aprendizaje del optimizador Adam está bien ajustado al problema.
+
+Por otro lado, la vista completa de **real vs. predicho** permite evaluar el comportamiento global del modelo. A pesar de la saturación visual, se aprecia que la red logra capturar la tendencia general de la serie. De hecho, la red identifica correctamente los periodos de subida y bajada sostenida de la temperatura. Sin embargo, el modelo tiende a suavizar la señal, comportándose de forma similar a una media móvil, lo que le impide alcanzar con precisión los valores más extremos.
 
 ```python
 # Bucle de visualización de resultados
@@ -652,13 +670,13 @@ for ws in WINDOW_SIZES:
 ![[Pasted image 20260331121757.png]]
 ![[Pasted image 20260331121803.png]]
 
-Al hacer un "zoom" a las primeras 200 horas (que son unos 8 días y medio), puedes apreciar detalles críticos que se pierden en la vista general:
+Al acercarnos a las primeras 200 horas (aproximadamente ocho días y medio) la visualización deja de ser una panorámica general y empieza a revelar matices clave del comportamiento del modelo. En este tramo más corto es posible observar con mayor claridad cómo responde la predicción frente a la realidad.
 
-El retraso (Lag): Puedes ver si la línea roja reacciona tarde a los cambios de la azul.
+Uno de los aspectos más evidentes es el **retraso (*lag*)**. La línea predicha parece reaccionar con cierto desfase respecto a la real, como si fuera siempre un paso por detrás. Este patrón sugiere que el modelo tiende a apoyarse excesivamente en el valor inmediatamente anterior, asumiendo que el siguiente será muy similar.
 
-La precisión en picos: Puedes ver si el modelo "recorta" los máximos o si llega bien a las temperaturas punta.
+También se aprecia mejor la **precisión en los picos**. En lugar de alcanzar los máximos y mínimos reales, el modelo tiende a suavizarlos. Esto indica una dificultad para capturar cambios bruscos.
 
-El ciclo diario: En 200 horas verás unas 8 subidas y bajadas, lo que te permite confirmar si el modelo ha entendido el ritmo de día/noche.
+Por último, este zoom permite identificar claramente el **ciclo diario**. En 200 horas se observan varias oscilaciones completas de subida y bajada, lo que facilita comprobar si el modelo ha aprendido correctamente el patrón día-noche. Aunque logra reproducir la forma general de estas variaciones, los desfases y la pérdida de intensidad en los picos revelan que aún no capta del todo la dinámica completa del sistema.
 
 ```python
 # Bucle de visualización de resultados
@@ -702,3 +720,52 @@ for ws in WINDOW_SIZES:
 
 ![[Pasted image 20260331121901.png]]![[Pasted image 20260331121906.png|697]]
 ![[Pasted image 20260331121914.png]]
+
+<div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+<p><strong>Solución:</strong> 
+
+<strong>¿Por qué deben convertirse los datos en ventanas deslizantes?</strong>
+
+Las series temporales son flujos de datos continuos sin etiquetas explícitas. Sin embargo, las redes neuronales requieren una estructura de aprendizaje supervisado para poder entrenarse. En este sentido, la técnica de ventana deslizante (*sliding window*) es esencial porque:
+* <strong>Crea pares de entrada-salida (X -> y):</strong> Transforma una secuencia plana en ejemplos discretos donde el pasado reciente actúa como características (*features*) y el valor siguiente como la etiqueta (*target*).
+* <strong>Define un tamaño de entrada fijo:</strong> Las arquitecturas como la SimpleRNN necesitan que el vector de entrada tenga una dimensión predefinida para procesar la información.
+* <strong>Estructura la dependencia temporal:</strong> Permite que el modelo aprenda de forma sistemática cómo los patrones observados en un intervalo de tiempo específico (por ejemplo, 24 horas) se correlacionan con el resultado inmediato posterior.
+
+<strong>¿Qué limitaciones tiene una SimpleRNN para secuencias largas?</strong>
+
+La principal limitación de la SimpleRNN es el fenómeno conocido como desvanecimiento del gradiente (*vanishing gradient*).
+
+Este problema ocurre por lo siguiente:
+
+* <strong>Propagación del error:</strong> Durante el entrenamiento, el error se propaga hacia atrás en el tiempo a través de cada paso de la secuencia. En ventanas largas (como la de 168h), los gradientes se multiplican repetidamente por los pesos de la red.
+* <strong>Pérdida de información:</strong> Si esos pesos son pequeños, el gradiente disminuye exponencialmente hasta volverse insignificante. Como resultado, los pesos de las primeras etapas de la ventana no se actualizan eficazmente.
+* <strong>'Olvido' a largo plazo:</strong> En la práctica, esto significa que la red pierde la capacidad de aprender dependencias lejanas. De modo que el modelo solo "recuerda" y reacciona a los eventos más recientes de la secuencia, ignorando patrones importantes que ocurrieron al inicio de la ventana.
+
+Para mitigar esto, se desarrollaron arquitecturas más complejas como **LSTM (Long Short-Term Memory)** y **GRU (Gated Recurrent Unit)**, que utilizan 'puertas' lógicas para decidir qué información preservar y cuál descartar a lo largo del tiempo.
+</p>
+</div>
+
+
+---
+
+<div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+**Ejercicio [2 pts.].** Entrena modelos recurrentes avanzados para predicción multivariante de series temporales y compara su rendimiento. Para ello:
+- Usa el mismo dataset y preprocesamiento que en el ejercicio anterior.
+
+- Implementa y compara los dos modelos siguientes:
+    - Un modelo con una capa `LSTM`, una capa `Dropout` y una capa de salida `Dense`.
+    - Un modelo con una capa `GRU`, una capa `Dropout` y una capa de salida `Dense`.
+    - Compila ambos modelos con loss `mean_squared_error` y optimizador `Adam`.
+    - Usa semillas aleatorias para mantener la reproducibilidad.
+    - Usa el mismo número de neuronas, tamaño de batch y epochs que en el ejercicio anterior.
+
+- Añade callbacks durante el entrenamiento:
+    - EarlyStopping para detener el entrenamiento si no mejora la validación.
+    - ReduceLROnPlateau para reducir el learning rate cuando la validación se estanque.
+
+- Entrena ambos modelos y calcula RMSE y MAE en entrenamiento, validación y test.
+- Añade los resultados a la tabla comparativa creada en el ejercicio anterior.
+- Visualiza las curvas de loss por epoch y los valores reales vs. valores predichos.
+- Realiza un breve análisis de la comparación de resultados entre SimpleRNN, LSTM y GRU. Indica si se aprecia overfitting en algún modelo.
+</div>
+
