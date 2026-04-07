@@ -33,30 +33,60 @@ En los ejercicios se trabajarán desde ejemplos sintéticos hasta aplicaciones r
 A continuación se incluyen las librerías necesarias para realizar esta PEC:
 
 ```python
-import numpy as np
+# Proporciona funciones para interactuar con el sistema operativo (como rutas de archivos)
+import os  
+
+# Permite modificar aspectos del entorno de ejecución de Python, como la lista de rutas de búsqueda de módulos (sys.path)
+import sys
+
+# Sube un nivel desde /PEC/
+root_dir = os.path.abspath('..')  
+sys.path.append(root_dir)
+
+# Análisis y manipulación de datos
 import pandas as pd
-import random
+
+# Estilo tablas
+pd.set_option('display.float_format', '{:.2f}'.format)
+pd.set_option('display.max_columns', None)
+  
+# Visualización de datos
 import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Estilo visualizacion
+sns.set(style="whitegrid")
+  
+# Operaciones matematicas y vectorizacion
+import numpy as np
+import random
+  
+# Librerias para DL
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.metrics import root_mean_squared_error, mean_absolute_error
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
-
-
+  
+# Para guardar modelos y resultados
 import tensorflow as tf
 from tensorflow import keras
 import tensorflow_datasets as tfds
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import SimpleRNN, Dense, Input, GRU, LSTM, Dropout, Embedding, Attention, GlobalAveragePooling1D
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras import regularizers
 from tensorflow.keras.models import Model
-
+  
+# Comprobar valores de RAM (CPU/GPU) y Disco
+import psutil
+import shutil
+  
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 ```
+
 En este ejercicio vamos a explorar cómo una **Red Neuronal Recurrente (RNN)** puede aprender patrones en datos de series temporales. Las RNN son un tipo de red diseñado para manejar secuencias, ya que no procesan los datos como entradas independientes, sino que mantienen un estado interno que les permite recordar información sobre pasos previos. Esto las hace especialmente útiles en tareas como predicción de series temporales, procesamiento de lenguaje natural (NLP) o análisis de señales.
 
 Trabajaremos con una serie temporal para la predicción de la temperatura del aceite de transformadores eléctricos. Más información sobre el dataset: https://github.com/zhouhaoyi/ETDataset
@@ -98,14 +128,6 @@ Responde a las siguientes preguntas:
 - ¿Qué limitaciones tiene una SimpleRNN para datos con secuencias temporales largas?
 </div>
 
-```python
-# Reproducibilidad
-SEED = 42
-np.random.seed(SEED)
-random.seed(SEED)
-tf.random.set_seed(SEED)
-```
-
 ## 1.1. Carga del *Electricity Transformer Dataset (ETDataset)*
 
 El dataset ETT-small (*Electricity Transformer Temperature*) se enmarca en el problema de la distribución eléctrica, donde uno de los mayores retos es predecir la demanda futura de energía. Esta demanda es altamente variable y depende de múltiples factores como el día de la semana, estaciones del año, condiciones climáticas o eventos puntuales. La falta de modelos precisos de predicción a largo plazo obliga a los gestores a sobredimensionar la capacidad, lo que provoca ineficiencias operativas, desperdicio energético y desgaste innecesario del equipamiento.
@@ -116,42 +138,6 @@ En este contexto, la variable **temperatura del aceite del transformador (OT, *O
 * Prevenir fallos en transformadores.
 * Reducir costes operativos y mantenimiento.
 * Evitar sobreestimaciones en la planificación energética.
-
-```python
-def resumen_dataset(df, nombre="Dataset"):
-    n_filas, n_cols = df.shape
-    fecha_min, fecha_max = df.index.min(), df.index.max()
-    print("="*60)
-    print(f"RESUMEN DEL DATASET: {nombre}")
-    print("="*60)
-    # Información general
-    print("\nINFORMACIÓN GENERAL")
-    print(f"- Dimensiones        : {n_filas:,} filas × {n_cols} columnas")
-    print(f"- Rango temporal     : {fecha_min} → {fecha_max}")
-    # Tipos de datos
-    print("\n- Tipos de datos:")
-    print(df.dtypes.value_counts())
-    # Primeras filas
-    print("\nPRIMERAS FILAS")
-    print(df.head())
-    # Estadísticas
-    print("\nESTADÍSTICAS DESCRIPTIVAS")
-    print(df.describe())
-    # Nulos
-    nulos = df.isnull().sum()
-    nulos = nulos[nulos > 0]
-    print("\nVALORES NULOS")
-    if len(nulos) == 0:
-        print("✔ No hay valores nulos")
-    else:
-        nulos_pct = (nulos / n_filas * 100).round(2)
-        resumen_nulos = pd.DataFrame({
-            "Nulos": nulos,
-            "%": nulos_pct
-        })
-        print(resumen_nulos)
-    print("="*60)
-```
 
 ```python
 # Ruta del dataset
@@ -181,7 +167,6 @@ VALORES NULOS  No hay valores nulos ============================================
 ### A. Estructura temporal y naturaleza del problema
 
 El dataset presenta **17.420 observaciones** con **7 variables numéricas**, todas en formato continuo (float64). El índice temporal abarca desde julio de 2016 hasta finales de junio de 2018, lo que sugiere una serie temporal de frecuencia horaria (aprox. 2 años completos).
-
 
 ### B. Variables explicativas y variable objetivo
 
@@ -473,6 +458,8 @@ Si se desglosa el cálculo, se entiende mejor.
 
 
 ```python
+SEED = 42
+
 # Guardar modelos e historiales de entrenamiento
 trained_models = {}
 trained_histories = {}
@@ -747,6 +734,7 @@ Para mitigar esto, se desarrollaron arquitecturas más complejas como **LSTM (Lo
 
 
 ---
+# 2. Problema de predicción multivariante
 
 <div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
 **Ejercicio [2 pts.].** Entrena modelos recurrentes avanzados para predicción multivariante de series temporales y compara su rendimiento. Para ello:
@@ -769,3 +757,227 @@ Para mitigar esto, se desarrollaron arquitecturas más complejas como **LSTM (Lo
 - Realiza un breve análisis de la comparación de resultados entre SimpleRNN, LSTM y GRU. Indica si se aprecia overfitting en algún modelo.
 </div>
 
+## 2.1. Modelos Recurrentes Avanzados (LSTM y GRU)
+
+Como se ha comentado en el apartado de Solución del ejercicio 1, las redes LSTM y GRU fueron diseñadas para solucionar el problema del desvanecimiento del gradiente que observamos en la SimpleRNN. Utilizan mecanismos de 'puertas' para decidir qué información fluye a través del tiempo, permitiendo capturar dependencias mucho más largas y complejas.
+
+### 2.1.1. Configuración de Callbacks y Parámetros
+
+En este apartado además de ustilizar `EarlyStopping`, añadimos `ReduceLROnPlateau`, que actuará como un 'acelerador inteligente', reduciendo la tasa de aprendizaje si el modelo deja de mejorar para intentar encontrar un mínimo global más preciso.
+
+```python
+# Parámetros heredados del Ejercicio 1
+WS_BEST = 24  # Usamos la mejor ventana del ejercicio anterior
+EPOCHS = 30
+BATCH_SIZE = 64
+NEURONS = 64
+N_FEATURES = train_scaled.shape[1]
+
+# Definición de Callbacks
+early_stop = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
+
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-5, verbose=1)
+  
+# Recuperamos los datos del diccionario all_sequences
+X_train_2 = all_sequences[WS_BEST]['X_train']
+y_train_2 = all_sequences[WS_BEST]['y_train']
+X_val_2   = all_sequences[WS_BEST]['X_val']
+y_val_2   = all_sequences[WS_BEST]['y_val']
+X_test_2  = all_sequences[WS_BEST]['X_test']
+y_test_2  = all_sequences[WS_BEST]['y_test']
+```
+
+## 2.2. Implementación y Entrenamiento de Modelos
+
+Entrenaremos ambos modelos en un bucle para asegurar que las condiciones sean idénticas.
+
+```python
+model_types = ['LSTM', 'GRU']
+trained_models_adv = {}
+trained_histories_adv = {}
+
+for m_type in model_types:
+    print(f"\n{'='*60}\n ENTRENANDO MODELO: {m_type}\n{'='*60}")
+
+    # Semillas para reproducibilidad
+    np.random.seed(SEED); random.seed(SEED); tf.random.set_seed(SEED)
+
+    # Definición de arquitectura según el tipo
+    model = Sequential()
+    model.add(Input(shape=(WS_BEST, N_FEATURES)))
+    if m_type == 'LSTM':
+        model.add(LSTM(NEURONS, activation="tanh"))
+
+    else:
+        model.add(GRU(NEURONS, activation="tanh"))
+    model.add(Dropout(0.2)) # Capa para prevenir overfitting
+    model.add(Dense(1))
+    model.compile(optimizer="adam", loss="mean_squared_error")
+    model.summary()
+
+    # Entrenamiento
+    history = model.fit(
+        X_train_2, y_train_2,
+        validation_data=(X_val_2, y_val_2),
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        callbacks=[early_stop, reduce_lr],
+        verbose=1
+    )
+
+    trained_models_adv[m_type] = model
+    trained_histories_adv[m_type] = history
+```
+
+model_types = ['LSTM', 'GRU']
+trained_models_adv = {}
+trained_histories_adv = {}
+
+for m_type in model_types:
+    print(f"\n{'='*60}\n ENTRENANDO MODELO: {m_type}\n{'='*60}")
+    
+    # Semillas para reproducibilidad
+    np.random.seed(SEED); random.seed(SEED); tf.random.set_seed(SEED)
+    
+    # Definición de arquitectura según el tipo
+    model = Sequential()
+    model.add(Input(shape=(WS_BEST, N_FEATURES)))
+    
+    if m_type == 'LSTM':
+        model.add(LSTM(NEURONS, activation="tanh"))
+    else:
+        model.add(GRU(NEURONS, activation="tanh"))
+        
+    model.add(Dropout(0.2)) # Capa para prevenir overfitting
+    model.add(Dense(1))
+    
+    model.compile(optimizer="adam", loss="mean_squared_error")
+    model.summary()
+    
+    # Entrenamiento
+    history = model.fit(
+        X_train_2, y_train_2,
+        validation_data=(X_val_2, y_val_2),
+        epochs=EPOCHS,
+        batch_size=BATCH_SIZE,
+        callbacks=[early_stop, reduce_lr],
+        verbose=1
+    )
+    
+    trained_models_adv[m_type] = model
+    trained_histories_adv[m_type] = history
+
+## 2.3. Evaluación y Actualización de la Tabla Comparativa
+Calculamos las métricas y las añadimos a la tabla que empezaste en el Ejercicio 1 para ver la evolución.
+
+```python
+# Lista para las nuevas métricas
+adv_results = []
+
+for m_type in model_types:
+    model = trained_models_adv[m_type]
+    subconjuntos = {
+        'Entrenamiento': (X_train_2, y_train_2),
+        'Validación': (X_val_2, y_val_2),
+        'Test': (X_test_2, y_test_2)
+    }
+
+    for nombre, (X, y_real_scaled) in subconjuntos.items():
+        y_pred_scaled = model.predict(X, verbose=0)
+        y_pred = target_scaler.inverse_transform(y_pred_scaled)
+        y_real = target_scaler.inverse_transform(y_real_scaled.reshape(-1, 1))
+        rmse = root_mean_squared_error(y_real, y_pred)
+        mae = mean_absolute_error(y_real, y_pred)
+        adv_results.append({
+            "Window Size": WS_BEST,
+            "Modelo": m_type,
+            "Conjunto": nombre,
+            "RMSE": round(rmse, 4),
+            "MAE": round(mae, 4)
+        })
+  
+# Unimos con los resultados anteriores (filtramos solo los de WS=24 del Ej1 para comparar)
+df_previo = df_resultados[df_resultados['Window Size'] == 24].copy()
+df_previo['Modelo'] = 'SimpleRNN'
+df_final = pd.concat([df_previo, pd.DataFrame(adv_results)], ignore_index=True)
+  
+print("\nCOMPARATIVA FINAL DE ARQUITECTURAS (WS=24):")
+print(df_final.sort_values(by=['Conjunto', 'RMSE']).to_string(index=False))
+```
+
+COMPARATIVA FINAL DE ARQUITECTURAS (WS=24): 
+Window Size Conjunto RMSE MAE Modelo 
+24 Entrenamiento 1.04 0.73 SimpleRNN 
+24 Entrenamiento 1.09 0.77 GRU 
+24 Entrenamiento 1.14 0.82 LSTM
+24 Test 0.69 0.48 SimpleRNN 
+24 Test 0.70 0.48 GRU
+24 Test 0.78 0.58 LSTM
+24 Validación 0.66 0.49 GRU
+24 Validación 0.67 0.50 SimpleRNN 
+24 Validación 0.70 0.53 LSTM
+
+## 2.5. Visualización de Resultados
+Generamos las gráficas comparativas para LSTM y GRU.
+
+```pyhton
+for m_type in model_types:
+    history = trained_histories_adv[m_type]
+    model = trained_models_adv[m_type]
+    y_test_pred = target_scaler.inverse_transform(model.predict(X_test_2, verbose=0))
+
+    y_test_real = target_scaler.inverse_transform(y_test_2.reshape(-1, 1))
+    plt.figure(figsize=(15, 5))
+
+    # Loss
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Val Loss')
+    plt.title(f'Loss: {m_type}')
+    plt.legend(); plt.grid(alpha=0.3)
+
+    # Zoom 200h
+    plt.subplot(1, 2, 2)
+    plt.plot(y_test_real, label='Real', color='blue', alpha=0.6)
+    plt.plot(y_test_pred, label=f'Predicho {m_type}', color='green', linestyle='--')
+
+    plt.title(f'{m_type}: Real vs Predicho (Zoom 200h)')
+    plt.legend(); plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(f"../images/LSTM-GRU__{m_type}.png", dpi=300, bbox_inches="tight")
+    plt.show()
+```
+
+![[Pasted image 20260406135906.png]]
+![[Pasted image 20260406135911.png]]
+
+
+```python
+for m_type in model_types:
+    history = trained_histories_adv[m_type]
+    model = trained_models_adv[m_type]
+    y_test_pred = target_scaler.inverse_transform(model.predict(X_test_2, verbose=0))
+    y_test_real = target_scaler.inverse_transform(y_test_2.reshape(-1, 1))
+    plt.figure(figsize=(15, 5))
+
+    # Loss
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Val Loss')
+    plt.title(f'Loss: {m_type}')
+    plt.legend(); plt.grid(alpha=0.3)
+
+    # Zoom 200h
+    plt.subplot(1, 2, 2)
+    plt.plot(y_test_real[:200], label='Real', color='blue', alpha=0.6)
+    plt.plot(y_test_pred[:200], label=f'Predicho {m_type}', color='green', linestyle='--')
+    plt.title(f'{m_type}: Real vs Predicho (Zoom 200h)')
+    plt.legend(); plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(f"../images/LSTM-GRU__{m_type}_subsample200.png", dpi=300, bbox_inches="tight")
+    plt.show()
+```
+
+![[Pasted image 20260406135952.png]]
+
+![[Pasted image 20260406135957.png]]
