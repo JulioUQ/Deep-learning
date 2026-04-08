@@ -768,16 +768,12 @@ En este apartado además de ustilizar `EarlyStopping`, añadimos `ReduceLROnPlat
 ```python
 # Parámetros heredados del Ejercicio 1
 WS_BEST = 24  # Usamos la mejor ventana del ejercicio anterior
-EPOCHS = 30
-BATCH_SIZE = 64
-NEURONS = 64
-N_FEATURES = train_scaled.shape[1]
 
 # Definición de Callbacks
-early_stop = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
+early_stop = EarlyStopping(monitor="val_loss", patience=PATIENCE, restore_best_weights=True)
 
 reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-5, verbose=1)
-  
+
 # Recuperamos los datos del diccionario all_sequences
 X_train_2 = all_sequences[WS_BEST]['X_train']
 y_train_2 = all_sequences[WS_BEST]['y_train']
@@ -787,88 +783,223 @@ X_test_2  = all_sequences[WS_BEST]['X_test']
 y_test_2  = all_sequences[WS_BEST]['y_test']
 ```
 
-## 2.2. Implementación y Entrenamiento de Modelos
+## 2.2. Definición y Construcción de Modelos LSTM y GRU
+ 
 
-Entrenaremos ambos modelos en un bucle para asegurar que las condiciones sean idénticas.
+El bucle de entrenamiento para los modelos avanzados sigue una estructura similar a la utilizada en el primer ejercicio, garantizando que ambos se evalúen bajo las mismas condiciones (mismo tamaño de ventana de 24 horas y mismas semillas aleatorias). Sin embargo, al observar los resúmenes (`model.summary()`) de las nuevas arquitecturas, la diferencia de complejidad estructural frente a la SimpleRNN se hace evidente de inmediato.
+
+El número de parámetros entrenables experimenta un aumento drástico, reflejando el complejo mecanismo interno que utilizan estas redes para combatir el desvanecimiento del gradiente:
+
+* **El Modelo LSTM:** Presenta un total de **18.497 parámetros**. Esta cifra cuadruplica aproximadamente los de la SimpleRNN ($4.673$). La razón técnica es que una celda LSTM no es una simple función de activación, sino que contiene cuatro redes neuronales interactuando internamente (tres "puertas" (olvido, entrada y salida) y un estado de celda candidato). Al desglosarlo, la capa LSTM requiere calcular cuatro conjuntos de pesos para las $7$ variables de entrada y las $64$ unidades ocultas, generando $18.432$ parámetros, a los que se suma la capa densa de salida ($65$).
+
+* **El Modelo GRU:** Resulta ser una versión ligeramente más eficiente, con **14.081 parámetros**. La arquitectura GRU fue diseñada para simplificar la LSTM combinando las puertas de olvido y entrada en una sola "puerta de actualización" y fusionando los estados ocultos. Al tener internamente tres operaciones matemáticas en lugar de cuatro, requiere menos pesos ($14.016$ en la capa recurrente), lo que teóricamente debería traducirse en un entrenamiento más rápido manteniendo un rendimiento competitivo.
+
+> **Nota sobre la Regularización:** En ambos modelos, la inclusión de la capa `Dropout(0.2)` añade $0$ parámetros entrenables, ya que su única función es "apagar" aleatoriamente el $20\%$ de las conexiones durante el entrenamiento. Esta técnica es fundamental en modelos con tanta capacidad (especialmente en la LSTM) para forzar a la red a no memorizar patrones específicos y evitar el sobreajuste.
+
+Finalmente, el comportamiento dinámico del entrenamiento también ha cambiado. Los registros muestran cómo el *callback* `ReduceLROnPlateau` intervino repetidas veces en ambos modelos, reduciendo el *learning rate* a la mitad (hasta llegar a órdenes de magnitud de $10^{-5}$) al detectar estancamientos en el error de validación, permitiendo un ajuste fino ("*fine-tuning*") que el optimizador Adam por defecto no habría logrado por sí solo.
 
 ```python
+# (Asegúrate de tener montado Drive como hicimos antes)
+save_dir_adv = "/content/drive/MyDrive/Deep-learning/Módulo 3 - Redes neuronales recurrentes (RNN)/LSTM_y_GRU"
+if not os.path.exists(save_dir_adv):
+    os.makedirs(save_dir_adv)
+  
 model_types = ['LSTM', 'GRU']
 trained_models_adv = {}
 trained_histories_adv = {}
 
 for m_type in model_types:
     print(f"\n{'='*60}\n ENTRENANDO MODELO: {m_type}\n{'='*60}")
-
+  
     # Semillas para reproducibilidad
     np.random.seed(SEED); random.seed(SEED); tf.random.set_seed(SEED)
-
+  
     # Definición de arquitectura según el tipo
     model = Sequential()
     model.add(Input(shape=(WS_BEST, N_FEATURES)))
+  
     if m_type == 'LSTM':
-        model.add(LSTM(NEURONS, activation="tanh"))
-
+        model.add(LSTM(UNITS, activation="tanh"))
     else:
-        model.add(GRU(NEURONS, activation="tanh"))
+        model.add(GRU(UNITS, activation="tanh"))
+  
     model.add(Dropout(0.2)) # Capa para prevenir overfitting
     model.add(Dense(1))
+  
     model.compile(optimizer="adam", loss="mean_squared_error")
     model.summary()
-
+  
     # Entrenamiento
     history = model.fit(
         X_train_2, y_train_2,
         validation_data=(X_val_2, y_val_2),
         epochs=EPOCHS,
-        batch_size=BATCH_SIZE,
+        batch_size=BATCH,
         callbacks=[early_stop, reduce_lr],
         verbose=1
     )
-
+  
+    # --- GUARDADO DISRUPTIVO ---
+    model_filename = f"{save_dir_adv}/modelo_{m_type}_ws_{WS_BEST}.keras"
+    model.save(model_filename)
+  
+    history_filename = f"{save_dir_adv}/historia_{m_type}_ws_{WS_BEST}.pkl"
+    with open(history_filename, 'wb') as f:
+        pickle.dump(history.history, f)
+  
     trained_models_adv[m_type] = model
     trained_histories_adv[m_type] = history
 ```
 
-model_types = ['LSTM', 'GRU']
-trained_models_adv = {}
-trained_histories_adv = {}
+  
+============================================================
+ ENTRENANDO MODELO: LSTM
+============================================================
 
-for m_type in model_types:
-    print(f"\n{'='*60}\n ENTRENANDO MODELO: {m_type}\n{'='*60}")
-    
-    # Semillas para reproducibilidad
-    np.random.seed(SEED); random.seed(SEED); tf.random.set_seed(SEED)
-    
-    # Definición de arquitectura según el tipo
-    model = Sequential()
-    model.add(Input(shape=(WS_BEST, N_FEATURES)))
-    
-    if m_type == 'LSTM':
-        model.add(LSTM(NEURONS, activation="tanh"))
-    else:
-        model.add(GRU(NEURONS, activation="tanh"))
-        
-    model.add(Dropout(0.2)) # Capa para prevenir overfitting
-    model.add(Dense(1))
-    
-    model.compile(optimizer="adam", loss="mean_squared_error")
-    model.summary()
-    
-    # Entrenamiento
-    history = model.fit(
-        X_train_2, y_train_2,
-        validation_data=(X_val_2, y_val_2),
-        epochs=EPOCHS,
-        batch_size=BATCH_SIZE,
-        callbacks=[early_stop, reduce_lr],
-        verbose=1
-    )
-    
-    trained_models_adv[m_type] = model
-    trained_histories_adv[m_type] = history
+Model: "sequential_3"
 
-## 2.3. Evaluación y Actualización de la Tabla Comparativa
-Calculamos las métricas y las añadimos a la tabla que empezaste en el Ejercicio 1 para ver la evolución.
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Layer (type)                    ┃ Output Shape           ┃       Param # ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ lstm (LSTM)                     │ (None, 64)             │        18,432 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dropout (Dropout)               │ (None, 64)             │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense_3 (Dense)                 │ (None, 1)              │            65 │
+└─────────────────────────────────┴────────────────────────┴───────────────┘
+
+ Total params: 18,497 (72.25 KB)
+
+ Trainable params: 18,497 (72.25 KB)
+
+ Non-trainable params: 0 (0.00 B)
+
+Epoch 1/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 6s 13ms/step - loss: 0.0049 - val_loss: 6.1717e-04 - learning_rate: 0.0010
+Epoch 2/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0021 - val_loss: 4.8428e-04 - learning_rate: 0.0010
+Epoch 3/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0018 - val_loss: 3.5835e-04 - learning_rate: 0.0010
+Epoch 4/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0016 - val_loss: 3.3052e-04 - learning_rate: 0.0010
+Epoch 5/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0015 - val_loss: 3.2143e-04 - learning_rate: 0.0010
+Epoch 6/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0013 - val_loss: 2.3125e-04 - learning_rate: 0.0010
+Epoch 7/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0012 - val_loss: 3.4526e-04 - learning_rate: 0.0010
+Epoch 8/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0011 - val_loss: 3.1629e-04 - learning_rate: 0.0010
+Epoch 9/200
+185/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0011
+Epoch 9: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0011 - val_loss: 2.8033e-04 - learning_rate: 0.0010
+Epoch 10/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 9.9663e-04 - val_loss: 2.1662e-04 - learning_rate: 5.0000e-04
+Epoch 11/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 9.6580e-04 - val_loss: 1.9780e-04 - learning_rate: 5.0000e-04
+Epoch 12/200
+184/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0010
+Epoch 12: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 9.5168e-04 - val_loss: 2.0860e-04 - learning_rate: 5.0000e-04
+Epoch 13/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.7827e-04 - val_loss: 2.0341e-04 - learning_rate: 2.5000e-04
+Epoch 14/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.7595e-04 - val_loss: 2.4720e-04 - learning_rate: 2.5000e-04
+Epoch 15/200
+184/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 8.9442e-04
+Epoch 15: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.6746e-04 - val_loss: 2.0563e-04 - learning_rate: 2.5000e-04
+Epoch 16/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.5889e-04 - val_loss: 2.1548e-04 - learning_rate: 1.2500e-04
+Epoch 17/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.3473e-04 - val_loss: 2.1434e-04 - learning_rate: 1.2500e-04
+Epoch 18/200
+187/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 8.6682e-04
+Epoch 18: ReduceLROnPlateau reducing learning rate to 6.25000029685907e-05.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.4741e-04 - val_loss: 2.1766e-04 - learning_rate: 1.2500e-04
+Epoch 19/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.3432e-04 - val_loss: 2.1871e-04 - learning_rate: 6.2500e-05
+Epoch 20/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.1205e-04 - val_loss: 2.1643e-04 - learning_rate: 6.2500e-05
+Epoch 21/200
+188/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 8.2069e-04
+Epoch 21: ReduceLROnPlateau reducing learning rate to 3.125000148429535e-05.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.1887e-04 - val_loss: 2.2688e-04 - learning_rate: 6.2500e-05
+
+============================================================
+ ENTRENANDO MODELO: GRU
+============================================================
+
+Model: "sequential_4"
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Layer (type)                    ┃ Output Shape           ┃       Param # ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ gru (GRU)                       │ (None, 64)             │        14,016 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dropout_1 (Dropout)             │ (None, 64)             │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense_4 (Dense)                 │ (None, 1)              │            65 │
+└─────────────────────────────────┴────────────────────────┴───────────────┘
+
+ Total params: 14,081 (55.00 KB)
+
+ Trainable params: 14,081 (55.00 KB)
+
+ Non-trainable params: 0 (0.00 B)
+
+Epoch 1/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 3s 10ms/step - loss: 0.0082 - val_loss: 2.9008e-04 - learning_rate: 0.0010
+Epoch 2/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0021 - val_loss: 5.2424e-04 - learning_rate: 0.0010
+Epoch 3/200
+183/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0018
+Epoch 3: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0017 - val_loss: 3.1573e-04 - learning_rate: 0.0010
+Epoch 4/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0015 - val_loss: 2.6756e-04 - learning_rate: 5.0000e-04
+Epoch 5/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0015 - val_loss: 1.7422e-04 - learning_rate: 5.0000e-04
+Epoch 6/200
+181/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0014
+Epoch 6: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0014 - val_loss: 1.7428e-04 - learning_rate: 5.0000e-04
+Epoch 7/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0013 - val_loss: 1.8974e-04 - learning_rate: 2.5000e-04
+Epoch 8/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0013 - val_loss: 1.7646e-04 - learning_rate: 2.5000e-04
+Epoch 9/200
+188/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0013
+Epoch 9: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0013 - val_loss: 2.3841e-04 - learning_rate: 2.5000e-04
+Epoch 10/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0012 - val_loss: 1.8141e-04 - learning_rate: 1.2500e-04
+Epoch 11/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0012 - val_loss: 1.7555e-04 - learning_rate: 1.2500e-04
+Epoch 12/200
+185/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0012
+Epoch 12: ReduceLROnPlateau reducing learning rate to 6.25000029685907e-05.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0012 - val_loss: 2.0563e-04 - learning_rate: 1.2500e-04
+Epoch 13/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 8ms/step - loss: 0.0011 - val_loss: 2.1657e-04 - learning_rate: 6.2500e-05
+Epoch 14/200
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0011 - val_loss: 1.7881e-04 - learning_rate: 6.2500e-05
+Epoch 15/200
+188/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0011
+Epoch 15: ReduceLROnPlateau reducing learning rate to 3.125000148429535e-05.
+191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0011 - val_loss: 1.7549e-04 - learning_rate: 6.2500e-05
+## 2.3. Análisis Comparativo: SimpleRNN vs. Modelos Avanzados
+
+Tras consolidar las métricas en la tabla final, los resultados revelan un comportamiento contraintuitivo pero profundamente revelador sobre la naturaleza de las redes neuronales recurrentes en la práctica. Contrario a la expectativa teórica general, **el modelo SimpleRNN con ventana de 24 horas sigue siendo el que mejor rendimiento ofrece**, superando a la arquitectura LSTM y manteniéndose a la par con la GRU.
+
+Este fenómeno no indica un error en el entrenamiento, sino que responde a tres factores arquitectónicos y de regularización clave:
+
+1. **La longitud de la secuencia temporal:** Las arquitecturas LSTM y GRU fueron diseñadas específicamente para resolver el desvanecimiento del gradiente en secuencias largas (dependencias a largo plazo). Sin embargo, al utilizar la mejor configuración del ejercicio anterior ($WS = 24$), el horizonte temporal es lo suficientemente corto como para que la SimpleRNN no sufra pérdida de memoria. En secuencias de 24 pasos, las complejas "puertas" de la LSTM no aportan una ventaja decisiva, añadiendo un coste computacional innecesario.
+
+2. **El impacto de la regularización (Dropout):** Para los modelos avanzados se introdujo una capa de `Dropout(0.2)` que no estaba presente en la SimpleRNN original. Esta técnica previene el *overfitting*, pero también dificulta el aprendizaje inicial. Al observar el RMSE de entrenamiento, la LSTM obtiene un error mayor (1.14) que la SimpleRNN (1.04). Esto sugiere un ligero *underfitting*; la red avanzada, penalizada por el Dropout, habría necesitado más épocas de entrenamiento o un ajuste en la paciencia de los *callbacks* para igualar la capacidad de memorización de la red simple.
+
+3. **Complejidad del modelo vs. Naturaleza de los datos:** La LSTM cuenta con casi 19.000 parámetros frente a los 4.600 de la SimpleRNN. Para el dataset ETTh1 a corto plazo (donde la temperatura futura depende fuertemente de la inercia térmica inmediata), una arquitectura excesivamente parametrizada actúa en su contra. La validación empírica de esto es el rendimiento de la **GRU**: al ser una versión optimizada y más ligera de la LSTM (alrededor de 14.000 parámetros y menos puertas lógicas), logra adaptarse mucho mejor al problema, igualando prácticamente el MAE en test de la SimpleRNN (0.48).
 
 ```python
 # Lista para las nuevas métricas
@@ -876,6 +1007,7 @@ adv_results = []
 
 for m_type in model_types:
     model = trained_models_adv[m_type]
+  
     subconjuntos = {
         'Entrenamiento': (X_train_2, y_train_2),
         'Validación': (X_val_2, y_val_2),
@@ -886,12 +1018,16 @@ for m_type in model_types:
         y_pred_scaled = model.predict(X, verbose=0)
         y_pred = target_scaler.inverse_transform(y_pred_scaled)
         y_real = target_scaler.inverse_transform(y_real_scaled.reshape(-1, 1))
+  
         rmse = root_mean_squared_error(y_real, y_pred)
         mae = mean_absolute_error(y_real, y_pred)
+        mse = mean_squared_error(y_real, y_pred)
+  
         adv_results.append({
             "Window Size": WS_BEST,
             "Modelo": m_type,
             "Conjunto": nombre,
+            "MSE": round(mse, 4),
             "RMSE": round(rmse, 4),
             "MAE": round(mae, 4)
         })
@@ -905,27 +1041,31 @@ print("\nCOMPARATIVA FINAL DE ARQUITECTURAS (WS=24):")
 print(df_final.sort_values(by=['Conjunto', 'RMSE']).to_string(index=False))
 ```
 
+  
 COMPARATIVA FINAL DE ARQUITECTURAS (WS=24): 
-Window Size Conjunto RMSE MAE Modelo 
-24 Entrenamiento 1.04 0.73 SimpleRNN 
-24 Entrenamiento 1.09 0.77 GRU 
-24 Entrenamiento 1.14 0.82 LSTM
-24 Test 0.69 0.48 SimpleRNN 
-24 Test 0.70 0.48 GRU
-24 Test 0.78 0.58 LSTM
-24 Validación 0.66 0.49 GRU
-24 Validación 0.67 0.50 SimpleRNN 
-24 Validación 0.70 0.53 LSTM
+Window Size Conjunto MSE RMSE MAE Modelo 
+24 Entrenamiento 1.07 1.04 0.73 SimpleRNN
+24 Entrenamiento 1.18 1.09 0.77 GRU 
+24 Entrenamiento 1.29 1.14 0.82 LSTM 
+24 Test 0.48 0.69 0.48 SimpleRNN 
+24 Test 0.49 0.70 0.48 GRU 
+24 Test 0.61 0.78 0.58 LSTM
+24 Validación 0.44 0.66 0.49 GRU 
+24 Validación 0.44 0.67 0.50 SimpleRNN
+24 Validación 0.50 0.70 0.53 LSTM
+## 2.5. Visualización de Loss y Predicciones (LSTM y GRU)
 
-## 2.5. Visualización de Resultados
-Generamos las gráficas comparativas para LSTM y GRU.
+Al igual que en el análisis de la arquitectura simple, evaluamos el comportamiento de los modelos avanzados a través de sus curvas de aprendizaje y la representación visual de sus predicciones frente a los datos reales.
 
-```pyhton
+En las **curvas de _loss_** de ambos modelos, se observa una convergencia estable y sostenida. Un detalle técnico fundamental que diferencia estas gráficas de las del primer ejercicio es que la curva de validación (_Val Loss_) se mantiene consistentemente por debajo de la curva de entrenamiento (_Train Loss_). Este fenómeno es el efecto directo de la capa `Dropout(0.2)`: durante el entrenamiento, a la red se le "apagan" neuronas, lo que eleva artificialmente su error; sin embargo, durante la validación, la red opera con toda su capacidad, obteniendo un mejor rendimiento. La ausencia de repuntes al alza en la validación confirma que no hay _overfitting_ y que la combinación de _EarlyStopping_ y _ReduceLROnPlateau_ ha gestionado el entrenamiento de forma impecable.
+
+En la vista panorámica de **real vs. predicho**, tanto la LSTM como la GRU logran trazar con éxito la tendencia macroscópica de la serie temporal a lo largo del conjunto de test. A pesar de la saturación visual propia de representar más de 2600 horas, se aprecia que los modelos mantienen la estabilidad y no divergen frente a la volatilidad de la serie, capturando fielmente los periodos de calentamiento y enfriamiento prolongados del transformador.
+
+```python
 for m_type in model_types:
     history = trained_histories_adv[m_type]
     model = trained_models_adv[m_type]
     y_test_pred = target_scaler.inverse_transform(model.predict(X_test_2, verbose=0))
-
     y_test_real = target_scaler.inverse_transform(y_test_2.reshape(-1, 1))
     plt.figure(figsize=(15, 5))
 
@@ -941,16 +1081,21 @@ for m_type in model_types:
     plt.plot(y_test_real, label='Real', color='blue', alpha=0.6)
     plt.plot(y_test_pred, label=f'Predicho {m_type}', color='green', linestyle='--')
 
-    plt.title(f'{m_type}: Real vs Predicho (Zoom 200h)')
+    plt.title(f'{m_type}: Real vs Predicho')
     plt.legend(); plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(f"../images/LSTM-GRU__{m_type}.png", dpi=300, bbox_inches="tight")
+
+   # plt.savefig(f"../images/LSTM-GRU__{m_type}.png", dpi=300, bbox_inches="tight")
     plt.show()
 ```
+
 
 ![[Pasted image 20260406135906.png]]
 ![[Pasted image 20260406135911.png]]
 
+Al aplicar el **zoom a las primeras 200 horas**, los matices del comportamiento predictivo a corto plazo salen a la luz. A pesar de la enorme complejidad matemática de las puertas lógicas que incorporan la LSTM y la GRU, el **retraso (_lag_)** sigue estando visible. Los modelos continúan exhibiendo cierta dependencia de la "predicción ingenua" (asumir que el valor siguiente será igual al actual), reaccionando a los cambios bruscos un paso por detrás en lugar de anticiparlos. Esto se hace especialmente evidente en la profunda y repentina caída de temperatura que se registra en torno a la hora 115, donde la predicción persigue al desplome real con un ligero desfase.
+
+Finalmente, en cuanto a la **precisión en los picos** y el ciclo diario, ambos modelos avanzados siguen mostrando la tendencia a suavizar los valores extremos, funcionando como un filtro de la señal original. No obstante, al comparar minuciosamente el encaje de ambas gráficas, la línea de predicción de la **GRU** parece ceñirse de forma sutilmente más estrecha a los recovecos de la curva real que la de la LSTM. Esta confirmación visual cierra el círculo del análisis, respaldando la conclusión numérica obtenida en la tabla de métricas: para esta ventana de 24 horas, la arquitectura GRU resulta más eficiente y ajustada que la LSTM.
 
 ```python
 for m_type in model_types:
@@ -981,3 +1126,345 @@ for m_type in model_types:
 ![[Pasted image 20260406135952.png]]
 
 ![[Pasted image 20260406135957.png]]
+
+En conclusión, la comparativa demuestra el principio de parsimonia en Deep Learning. Cuando las dependencias temporales son a corto plazo (un ciclo diario), introducir arquitecturas complejas (LSTM) junto con fuerte regularización puede degradar el rendimiento. La elección de la arquitectura debe estar guiada por la ventana de contexto necesaria, siendo la SimpleRNN o la GRU las opciones más eficientes para este pronóstico a corto plazo.
+
+**Pregunta: Realiza un breve análisis de la comparación de resultados entre SimpleRNN, LSTM y GRU. Indica si se aprecia overfitting en algún modelo.**
+
+**Solución: El analisis se ha realizado junto a los resultados obtenidos en cada apartado**
+
+---
+
+# 3. LSTM con PyTorch
+
+---
+
+En este ejercicio implementarás un modelo LSTM para predicción de series temporales usando **PyTorch**.
+
+Hasta ahora los modelos recurrentes se han implementado con TensorFlow/Keras, donde el entrenamiento se realiza mediante `model.fit()`. En PyTorch, en cambio, el entrenamiento se controla de forma explícita mediante un **bucle de entrenamiento manual**, lo que ofrece mayor flexibilidad.
+
+Dado que PyTorch no se ha trabajado todavía en profundidad en la asignatura, el ejercicio se plantea de forma guiada, proporcionando la estructura básica del código que deberás completar, ejecutar y analizar.
+
+**IMPORTANTE: Es recomendable realizar este ejercicio para preparar las próximas PEC, que serán en PyTorch. Si decides no hacerlo, puedes continuar con el resto de ejercicios, pero tendrás que realizar el Ejecicio 6 de búsqueda de hiperparámetros con Optuna para poder conseguir un 10 en la PEC.**
+
+---
+
+**Ejercicio [1 pts.].** Continúa el ejercicio anterior, pero ahora implementa los modelos recurrentes usando PyTorch en lugar de TensorFlow/Keras. Para ello:
+
+**Paso 1. Preparación de datos**
+
+Usa el mismo dataset (ETTh1) y preprocesamiento que en los ejercicios anteriores. Reutiliza las secuencias de entrada, particiones de entrenamiento/validación/test y normalización ya definidas.
+
+**Paso 2. Conversión de datos a tensores de PyTorch**
+
+PyTorch trabaja con objetos llamados tensores (`torch.Tensor`).Convierte los datos de entrenamiento, validación y test a tensores usando `torch.tensor(..., dtype=torch.float32)`.
+
+**Paso 3. Creación de TensorDataset y DataLoader**
+
+En PyTorch los datos suelen gestionarse mediante dos estructuras:
+
+- `TensorDataset`. Agrupa los tensores de entrada y salida. `TensorDataset(X, y)`.
+- `DataLoader`. Permite: iterar por batches, barajar los datos y alimentar el modelo durante el entrenamiento. Debes crear tres `DataLoader`:
+    - entrenamiento (`shuffle=True`)
+    - validación (`shuffle=False`)
+    - test (`shuffle=False`)
+
+Usa el mismo **tamaño de batch** que en los ejercicios anteriores.
+
+**Paso 4. Implementación del modelo LSTM**
+
+En PyTorch los modelos se implementan creando una clase que hereda de `torch.nn.Module`. Debes definir un modelo con la siguiente arquitectura: - Una capa `LSTM`. - Una capa `Dropout`. - Una capa de salida `Linear` para predicción de la serie temporal.
+
+**Constructor `__init__`**
+
+En el constructor debes definir las capas del modelo:
+
+- `nn.LSTM`
+- `nn.Dropout`
+- `nn.Linear`
+
+El número de neuronas ocultas debe ser el mismo usado en los ejercicios anteriores
+
+**Método `forward`**
+
+El método `forward()` define cómo fluye la información a través del modelo.
+
+Pasos que debes implementar:
+
+1. Pasar la secuencia de entrada `x` por la capa LSTM
+2. Seleccionar la salida correspondiente al último instante temporal
+3. Aplicar dropout
+4. Pasar el resultado por la capa lineal para obtener la predicción final
+
+**Paso 5. Configuración del entrenamiento**
+
+Define los elementos necesarios para entrenar el modelo:
+
+- **Función de pérdida**. Usa el MSE: `criterion = nn.MSELoss()`
+- **Optimizador**. Usa el optimizador **Adam**: `optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)`
+
+**Paso 6. Implementación del bucle de entrenamiento manual**
+
+A diferencia de Keras, en PyTorch el entrenamiento debe implementarse manualmente.
+
+Para cada epoch:
+
+**Paso 6.1. Fase de entrenamiento**
+
+Primero pon el modelo en modo entrenamiento: `model.train()`. Después itera sobre los batches del `DataLoader` de entrenamiento (creado en el paso 3).
+
+Para cada batch:
+
+1. Mueve los datos al dispositivo correspondiente (`cpu` o `gpu`).
+2. Reinicia los gradientes `optimizer.zero_grad()`.
+3. Realiza la propagación hacia adelante `pred = model(xb)`.
+4. Calcula la pérdida `loss = criterion(pred, yb)`.
+5. Realiza la backpropagation `loss.backward()`.
+6. Actualiza los pesos `optimizer.step()`.
+
+Acumula la pérdida media de entrenamiento de cada epoch.
+
+**Paso 6.2. Fase de validación**
+
+Después de cada epoch evalúa el modelo en el conjunto de validación.
+
+1. Cambia el modelo a modo evaluación `model.eval()`.
+2. Desactiva el cálculo de gradientes `with torch.no_grad():`.
+3. Itera sobre el `DataLoader` de validación y calcula la pérdida.
+
+En esta fase **NO** se debe:
+
+- hacer `backward()`
+- actualizar los pesos
+
+**Paso 7. Evaluación del modelo**
+
+Una vez entrenado el modelo, evalúalo en entrenamiento, validación y test
+
+**Paso 8. Comparación de resultados**
+
+Calcula RMSE y MAE en entrenamiento, validación y test. Incluye los nuevos resultados en la tabla comparativa y analiza los resultados obtenidos.
+
+**Solución:**
+
+```python
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
+
+# Variables heredadas
+BATCH =    BATCH
+N_UNITS =  UNITS
+EPOCHS =   EPOCHS
+DROPOUT = 0.2
+
+# Conversión de datos a tensores
+# Uso .reshape(-1, 1) en las 'y' para que tengan forma [batch, 1] y no [batch]
+X_train_t = torch.tensor(X_train_2, dtype=torch.float32)
+y_train_t = torch.tensor(y_train_2, dtype=torch.float32).reshape(-1, 1)
+
+X_val_t = torch.tensor(X_val_2, dtype=torch.float32)
+y_val_t = torch.tensor(y_val_2, dtype=torch.float32).reshape(-1, 1)
+  
+X_test_t = torch.tensor(X_test_2, dtype=torch.float32)
+y_test_t = torch.tensor(y_test_2, dtype=torch.float32).reshape(-1, 1)
+  
+# Creación del TensorDataset
+train_dataset = TensorDataset(X_train_t, y_train_t)
+val_dataset = TensorDataset(X_val_t, y_val_t)
+test_dataset = TensorDataset(X_test_t, y_test_t)
+  
+train_loader = DataLoader(train_dataset, batch_size=BATCH, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=BATCH, shuffle=False)
+test_loader = DataLoader(test_dataset, batch_size=BATCH, shuffle=False)
+
+# Implementación del Modelo LSTM en PyTorch
+class LSTMModel(nn.Module):
+    def __init__(self, input_size, hidden_size=N_UNITS, dropout=DROPOUT):
+        super().__init__()
+        # batch_first=True es crucial porque los tensores son [batch, seq, features
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=True)    # Capa LSTM
+        self.dropout = nn.Dropout(dropout)                                                       # Capa Dropout
+        self.fc = nn.Linear(hidden_size, 1)                                                      # Capa Linear
+
+
+    def forward(self, x):
+        out, _ = self.lstm(x)     # Pasar la secuencia de entrada `x` por la capa LSTM
+        out = out[:, -1, :]       # Seleccionar la salida correspondiente al último instante temporal
+        out = self.dropout(out)   # Aplicar dropout
+        out = self.fc(out)        # Pasar el resultado por la capa lineal para obtener la predicción final
+        return out
+        
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Entrenamiento
+def train_model(model):
+    model.to(device)                                          # Mueve los datos al dispositivo correspondiente (`cpu` o `gpu`).
+    criterion = nn.MSELoss()                                  #  Función de pérdida
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3) #  Optimizador
+
+    for epoch in range(EPOCHS):
+        # ENTRENAMIENTO
+        model.train()                               # Pon el modelo en modo entrenamiento
+        train_loss = 0
+        for xb, yb in train_loader:
+            xb, yb =  xb.to(device), yb.to(device)  # Mueve los datos al dispositivo correspondiente (`cpu` o `gpu`)
+            optimizer.zero_grad()                   # Reinicia los gradientes
+            pred = model(xb)                        # Realiza la propagación hacia adelante
+            loss = criterion(pred, yb)              # Calcula la pérdida
+            loss.backward()                         # Realiza la backpropagation
+            optimizer.step()                        # Actualiza los pesos
+            train_loss += loss.item()               # Acumula la pérdida del batch actual (loss.item() convierte el tensor de PyTorch a un valor numérico de Python)
+        train_loss /= len(train_loader)             # Calcula la pérdida media de entrenamiento dividiendo entre el número total de batches
+        
+        # VALIDACIÓN
+        model.eval()                                   # Cambia el modelo a modo evaluación
+
+        val_loss = 0
+
+        with torch.no_grad():                          # Desactiva el cálculo de gradientes
+            for xb, yb in val_loader:
+                xb, yb = xb.to(device), yb.to(device)  # Mueve los datos al dispositivo correspondiente (`cpu` o `gpu`)
+                pred = model(xb)                       # Realiza la propagación hacia adelante
+                loss = criterion(pred, yb)             # Calcula la pérdida
+                val_loss += loss.item()                # Acumula la pérdida del batch actual durante la fase de validación
+        val_loss /= len(val_loader)                    # Calcula la pérdida media de validación dividiendo entre el número total de batches
+
+        print(f"Epoch {epoch+1}/{EPOCHS} - train_loss: {train_loss:.5f} - val_loss: {val_loss:.5f}")
+
+# Evaluación del modelo
+def evaluate_model(model, loader):
+    model.eval()                                # Pon el modelo en modo evaluación
+    preds = []
+    trues = []
+
+    with torch.no_grad():                       # Desactiva el cálculo de gradientes para ahorrar memoria y acelerar la evaluación
+        for xb, yb in loader:                   # Itera sobre los batches del DataLoader
+            xb = xb.to(device)                  # Mueve los datos al dispositivo correspondiente
+            pred = model(xb).cpu().numpy()      # Realiza la predicción del modelo y la convierte de tensor de PyTorch a array de NumPy
+            preds.append(pred)                  # Guarda las predicciones del batch en la lista
+            trues.append(yb.numpy())            # Guarda los valores reales del batch en la lista
+  
+    preds = np.vstack(preds)                    # Une verticalmente todas las predicciones de los batches en un único array
+    trues = np.vstack(trues)                   # Une verticalmente todos los valores reales en un único array
+  
+    # Desescalamos antes de medir el error para poder comparar con Keras
+    preds_real = target_scaler.inverse_transform(preds)
+    trues_real = target_scaler.inverse_transform(trues)
+  
+    # Cálculo de errores (incluido el MSE para tener las 3 métricas)
+    mse = mean_squared_error(trues_real, preds_real)
+    rmse = root_mean_squared_error(trues_real, preds_real)
+    mae = mean_absolute_error(trues_real, preds_real)
+  
+    return mse, rmse, mae        
+    
+    
+# Definición de la LSTM
+lstm_model = LSTMModel(input_size=N_FEATURES)
+
+# Entrenamiento del modelo
+train_model(lstm_model)
+
+# Evaluación del modelo
+lstm_train_mse, lstm_train_rmse, lstm_train_mae = evaluate_model(lstm_model, train_loader)
+
+lstm_val_mse, lstm_val_rmse, lstm_val_mae = evaluate_model(lstm_model, val_loader)
+
+lstm_test_mse, lstm_test_rmse, lstm_test_mae = evaluate_model(lstm_model, test_loader)
+
+# Creamos una lista con los resultados específicos del modelo de PyTorch
+resultados_pytorch = [
+    {"Window Size": 24, "Conjunto": "Entrenamiento", "MSE": round(lstm_train_mse, 4), "RMSE": round(lstm_train_rmse, 4), "MAE": round(lstm_train_mae, 4), "Modelo": "LSTM (PyTorch)"},
+
+    {"Window Size": 24, "Conjunto": "Validación", "MSE": round(lstm_val_mse, 4), "RMSE": round(lstm_val_rmse, 4), "MAE": round(lstm_val_mae, 4), "Modelo": "LSTM (PyTorch)"},
+
+    {"Window Size": 24, "Conjunto": "Test", "MSE": round(lstm_test_mse, 4), "RMSE": round(lstm_test_rmse, 4), "MAE": round(lstm_test_mae, 4), "Modelo": "LSTM (PyTorch)"}
+]
+  
+# Lo convertimos a DataFrame temporal
+df_pytorch = pd.DataFrame(resultados_pytorch)
+  
+# Cocatenamos tu df_final (Keras) con el nuevo df_pytorch para crear el dataframe final
+df_final_pytorch = pd.concat([df_final, df_pytorch], ignore_index=True)
+  
+# Mostramos la tabla ordenada por Conjunto y luego por RMSE para ver el ranking
+print("\nCOMPARATIVA FINAL DE ARQUITECTURAS (WS=24) - KERAS VS PYTORCH:")
+print(df_final_pytorch.sort_values(by=['Conjunto', 'RMSE']).to_string(index=False))
+```
+
+Epoch 1/200 - train_loss: 0.01647 - val_loss: 0.00474 Epoch 2/200 - train_loss: 0.00281 - val_loss: 0.00070 Epoch 3/200 - train_loss: 0.00232 - val_loss: 0.00068 Epoch 4/200 - train_loss: 0.00198 - val_loss: 0.00059 Epoch 5/200 - train_loss: 0.00193 - val_loss: 0.00030 Epoch 6/200 - train_loss: 0.00188 - val_loss: 0.00036 Epoch 7/200 - train_loss: 0.00167 - val_loss: 0.00058 Epoch 8/200 - train_loss: 0.00152 - val_loss: 0.00028 Epoch 9/200 - train_loss: 0.00146 - val_loss: 0.00028 Epoch 10/200 - train_loss: 0.00139 - val_loss: 0.00047 Epoch 11/200 - train_loss: 0.00135 - val_loss: 0.00047 Epoch 12/200 - train_loss: 0.00127 - val_loss: 0.00025 Epoch 13/200 - train_loss: 0.00114 - val_loss: 0.00046 Epoch 14/200 - train_loss: 0.00110 - val_loss: 0.00021 Epoch 15/200 - train_loss: 0.00109 - val_loss: 0.00024 Epoch 16/200 - train_loss: 0.00102 - val_loss: 0.00027 Epoch 17/200 - train_loss: 0.00096 - val_loss: 0.00028 Epoch 18/200 - train_loss: 0.00089 - val_loss: 0.00051 Epoch 19/200 - train_loss: 0.00085 - val_loss: 0.00019 Epoch 20/200 - train_loss: 0.00083 - val_loss: 0.00042 Epoch 21/200 - train_loss: 0.00079 - val_loss: 0.00019 Epoch 22/200 - train_loss: 0.00077 - val_loss: 0.00018 Epoch 23/200 - train_loss: 0.00073 - val_loss: 0.00036 Epoch 24/200 - train_loss: 0.00073 - val_loss: 0.00016 Epoch 25/200 - train_loss: 0.00066 - val_loss: 0.00027 Epoch 26/200 - train_loss: 0.00066 - val_loss: 0.00017 Epoch 27/200 - train_loss: 0.00063 - val_loss: 0.00017 Epoch 28/200 - train_loss: 0.00060 - val_loss: 0.00015 Epoch 29/200 - train_loss: 0.00059 - val_loss: 0.00016 Epoch 30/200 - train_loss: 0.00058 - val_loss: 0.00015 Epoch 31/200 - train_loss: 0.00059 - val_loss: 0.00016 Epoch 32/200 - train_loss: 0.00058 - val_loss: 0.00018 Epoch 33/200 - train_loss: 0.00058 - val_loss: 0.00018 Epoch 34/200 - train_loss: 0.00056 - val_loss: 0.00031 Epoch 35/200 - train_loss: 0.00057 - val_loss: 0.00015 Epoch 36/200 - train_loss: 0.00056 - val_loss: 0.00017 Epoch 37/200 - train_loss: 0.00054 - val_loss: 0.00015 Epoch 38/200 - train_loss: 0.00057 - val_loss: 0.00015 Epoch 39/200 - train_loss: 0.00054 - val_loss: 0.00025 Epoch 40/200 - train_loss: 0.00054 - val_loss: 0.00035 Epoch 41/200 - train_loss: 0.00056 - val_loss: 0.00033 Epoch 42/200 - train_loss: 0.00055 - val_loss: 0.00054 Epoch 43/200 - train_loss: 0.00056 - val_loss: 0.00018 Epoch 44/200 - train_loss: 0.00055 - val_loss: 0.00048 Epoch 45/200 - train_loss: 0.00055 - val_loss: 0.00016 Epoch 46/200 - train_loss: 0.00054 - val_loss: 0.00040 Epoch 47/200 - train_loss: 0.00057 - val_loss: 0.00022 Epoch 48/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 49/200 - train_loss: 0.00053 - val_loss: 0.00017 Epoch 50/200 - train_loss: 0.00054 - val_loss: 0.00014 Epoch 51/200 - train_loss: 0.00056 - val_loss: 0.00014 Epoch 52/200 - train_loss: 0.00054 - val_loss: 0.00017 Epoch 53/200 - train_loss: 0.00052 - val_loss: 0.00026 Epoch 54/200 - train_loss: 0.00053 - val_loss: 0.00022 Epoch 55/200 - train_loss: 0.00055 - val_loss: 0.00014 Epoch 56/200 - train_loss: 0.00052 - val_loss: 0.00033 Epoch 57/200 - train_loss: 0.00054 - val_loss: 0.00026 Epoch 58/200 - train_loss: 0.00052 - val_loss: 0.00018 Epoch 59/200 - train_loss: 0.00053 - val_loss: 0.00017 Epoch 60/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 61/200 - train_loss: 0.00053 - val_loss: 0.00014 Epoch 62/200 - train_loss: 0.00054 - val_loss: 0.00028 Epoch 63/200 - train_loss: 0.00055 - val_loss: 0.00014 Epoch 64/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 65/200 - train_loss: 0.00053 - val_loss: 0.00028 Epoch 66/200 - train_loss: 0.00054 - val_loss: 0.00060 Epoch 67/200 - train_loss: 0.00054 - val_loss: 0.00014 Epoch 68/200 - train_loss: 0.00054 - val_loss: 0.00016 Epoch 69/200 - train_loss: 0.00052 - val_loss: 0.00020 Epoch 70/200 - train_loss: 0.00054 - val_loss: 0.00015 Epoch 71/200 - train_loss: 0.00054 - val_loss: 0.00017 Epoch 72/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 73/200 - train_loss: 0.00054 - val_loss: 0.00022 Epoch 74/200 - train_loss: 0.00051 - val_loss: 0.00035 Epoch 75/200 - train_loss: 0.00053 - val_loss: 0.00019 Epoch 76/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 77/200 - train_loss: 0.00052 - val_loss: 0.00017 Epoch 78/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 79/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 80/200 - train_loss: 0.00054 - val_loss: 0.00014 Epoch 81/200 - train_loss: 0.00053 - val_loss: 0.00023 Epoch 82/200 - train_loss: 0.00051 - val_loss: 0.00024 Epoch 83/200 - train_loss: 0.00053 - val_loss: 0.00022 Epoch 84/200 - train_loss: 0.00054 - val_loss: 0.00025 Epoch 85/200 - train_loss: 0.00053 - val_loss: 0.00014 Epoch 86/200 - train_loss: 0.00053 - val_loss: 0.00022 Epoch 87/200 - train_loss: 0.00053 - val_loss: 0.00014 Epoch 88/200 - train_loss: 0.00052 - val_loss: 0.00024 Epoch 89/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 90/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 91/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 92/200 - train_loss: 0.00052 - val_loss: 0.00039 Epoch 93/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 94/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 95/200 - train_loss: 0.00054 - val_loss: 0.00016 Epoch 96/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 97/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 98/200 - train_loss: 0.00051 - val_loss: 0.00035 Epoch 99/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 100/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 101/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 102/200 - train_loss: 0.00052 - val_loss: 0.00034 Epoch 103/200 - train_loss: 0.00053 - val_loss: 0.00023 Epoch 104/200 - train_loss: 0.00052 - val_loss: 0.00019 Epoch 105/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 106/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 107/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 108/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 109/200 - train_loss: 0.00051 - val_loss: 0.00033 Epoch 110/200 - train_loss: 0.00051 - val_loss: 0.00023 Epoch 111/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 112/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 113/200 - train_loss: 0.00053 - val_loss: 0.00038 Epoch 114/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 115/200 - train_loss: 0.00049 - val_loss: 0.00019 Epoch 116/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 117/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 118/200 - train_loss: 0.00053 - val_loss: 0.00041 Epoch 119/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 120/200 - train_loss: 0.00052 - val_loss: 0.00018 Epoch 121/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 122/200 - train_loss: 0.00050 - val_loss: 0.00018 Epoch 123/200 - train_loss: 0.00051 - val_loss: 0.00021 Epoch 124/200 - train_loss: 0.00051 - val_loss: 0.00035 Epoch 125/200 - train_loss: 0.00052 - val_loss: 0.00020 Epoch 126/200 - train_loss: 0.00051 - val_loss: 0.00036 Epoch 127/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 128/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 129/200 - train_loss: 0.00052 - val_loss: 0.00017 Epoch 130/200 - train_loss: 0.00051 - val_loss: 0.00025 Epoch 131/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 132/200 - train_loss: 0.00052 - val_loss: 0.00027 Epoch 133/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 134/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 135/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 136/200 - train_loss: 0.00052 - val_loss: 0.00024 Epoch 137/200 - train_loss: 0.00051 - val_loss: 0.00037 Epoch 138/200 - train_loss: 0.00050 - val_loss: 0.00018 Epoch 139/200 - train_loss: 0.00051 - val_loss: 0.00023 Epoch 140/200 - train_loss: 0.00050 - val_loss: 0.00013 Epoch 141/200 - train_loss: 0.00052 - val_loss: 0.00013 Epoch 142/200 - train_loss: 0.00050 - val_loss: 0.00032 Epoch 143/200 - train_loss: 0.00050 - val_loss: 0.00013 Epoch 144/200 - train_loss: 0.00053 - val_loss: 0.00017 Epoch 145/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 146/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 147/200 - train_loss: 0.00051 - val_loss: 0.00013 Epoch 148/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 149/200 - train_loss: 0.00051 - val_loss: 0.00032 Epoch 150/200 - train_loss: 0.00052 - val_loss: 0.00018 Epoch 151/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 152/200 - train_loss: 0.00051 - val_loss: 0.00023 Epoch 153/200 - train_loss: 0.00050 - val_loss: 0.00029 Epoch 154/200 - train_loss: 0.00052 - val_loss: 0.00026 Epoch 155/200 - train_loss: 0.00050 - val_loss: 0.00015 Epoch 156/200 - train_loss: 0.00050 - val_loss: 0.00016 Epoch 157/200 - train_loss: 0.00052 - val_loss: 0.00013 Epoch 158/200 - train_loss: 0.00051 - val_loss: 0.00025 Epoch 159/200 - train_loss: 0.00050 - val_loss: 0.00021 Epoch 160/200 - train_loss: 0.00051 - val_loss: 0.00013 Epoch 161/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 162/200 - train_loss: 0.00050 - val_loss: 0.00013 Epoch 163/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 164/200 - train_loss: 0.00051 - val_loss: 0.00031 Epoch 165/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 166/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 167/200 - train_loss: 0.00051 - val_loss: 0.00021 Epoch 168/200 - train_loss: 0.00050 - val_loss: 0.00023 Epoch 169/200 - train_loss: 0.00050 - val_loss: 0.00021 Epoch 170/200 - train_loss: 0.00050 - val_loss: 0.00030 Epoch 171/200 - train_loss: 0.00051 - val_loss: 0.00030 Epoch 172/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 173/200 - train_loss: 0.00051 - val_loss: 0.00027 Epoch 174/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 175/200 - train_loss: 0.00050 - val_loss: 0.00015 Epoch 176/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 177/200 - train_loss: 0.00050 - val_loss: 0.00013 Epoch 178/200 - train_loss: 0.00052 - val_loss: 0.00047 Epoch 179/200 - train_loss: 0.00052 - val_loss: 0.00022 Epoch 180/200 - train_loss: 0.00050 - val_loss: 0.00017 Epoch 181/200 - train_loss: 0.00050 - val_loss: 0.00017 Epoch 182/200 - train_loss: 0.00050 - val_loss: 0.00031 Epoch 183/200 - train_loss: 0.00049 - val_loss: 0.00017 Epoch 184/200 - train_loss: 0.00052 - val_loss: 0.00024 Epoch 185/200 - train_loss: 0.00050 - val_loss: 0.00019 Epoch 186/200 - train_loss: 0.00050 - val_loss: 0.00019 Epoch 187/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 188/200 - train_loss: 0.00049 - val_loss: 0.00028 Epoch 189/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 190/200 - train_loss: 0.00050 - val_loss: 0.00016 Epoch 191/200 - train_loss: 0.00051 - val_loss: 0.00013 Epoch 192/200 - train_loss: 0.00050 - val_loss: 0.00023 Epoch 193/200 - train_loss: 0.00051 - val_loss: 0.00028 Epoch 194/200 - train_loss: 0.00049 - val_loss: 0.00016 Epoch 195/200 - train_loss: 0.00049 - val_loss: 0.00018 Epoch 196/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 197/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 198/200 - train_loss: 0.00051 - val_loss: 0.00020 Epoch 199/200 - train_loss: 0.00050 - val_loss: 0.00017 Epoch 200/200 - train_loss: 0.00051 - val_loss: 0.00024 
+
+COMPARATIVA FINAL DE ARQUITECTURAS (WS=24) - KERAS VS PYTORCH:
+Window Size Conjunto MSE RMSE MAE Modelo 
+24 Entrenamiento 0.95 0.98 0.67 LSTM (PyTorch) 
+24 Entrenamiento 1.07 1.04 0.73 SimpleRNN 
+24 Entrenamiento 1.18 1.09 0.77 GRU 
+24 Entrenamiento 1.29 1.14 0.82 LSTM 
+24 Test 0.48 0.69 0.48 SimpleRNN 
+24 Test 0.49 0.70 0.48 GRU 
+24 Test 0.49 0.70 0.50 LSTM (PyTorch) 
+24 Test 0.61 0.78 0.58 LSTM 
+24 Validación 0.44 0.66 0.49 GRU 
+24 Validación 0.44 0.67 0.50 SimpleRNN 
+24 Validación 0.50 0.70 0.53 LSTM 
+24 Validación 0.61 0.78 0.63 LSTM (PyTorch)
+
+<div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+
+<p><strong>Solución:</strong> </p>
+
+  
+
+Al evaluar el conjunto de **Test**, las arquitecturas menos parametrizadas (la **SimpleRNN** y la **GRU** implementadas en Keras) mantienen su liderazgo indiscutible, compartiendo un MAE de $0.48^\circ C$ y demostrando ser las estructuras más eficientes para capturar el ciclo térmico diario.
+
+  
+
+Por otro lado, mientras que la LSTM de Keras obtuvo los peores resultados globales (MAE de 0.58 en Test), su homóloga matemática programada en PyTorch ha logrado reducir ese error a **0.50**, empatando en el RMSE (0.70) con la GRU. Aún más destacable es su desempeño en el conjunto de **Entrenamiento**, donde la LSTM de PyTorch alcanza un RMSE de **0.98**, el valor más bajo de toda la tabla, superando con creces el pobre ajuste de la LSTM de Keras (1.14).
+
+  
+
+La diferencia entre los modelos LSTM de Keras y el modelo LSTM de pytorch no residen en las ecuaciones de la red, si no en la **dinamica del bucle de entrenamiento:**
+
+  
+
+1. **La ausencia de EarlyStopping:** En Keras, el modelo estaba condicionado por un *callback* de parada temprana que cortaba el entrenamiento al detectar un estancamiento en la validación. En PyTorch, al implementar el bucle manualmente y prescindir de este freno, el modelo fue forzado a iterar durante las **200 épocas completas**.
+
+2. **Superación del Underfitting:** Como se analizó en el ejercicio 2, la LSTM de Keras sufrió *underfitting* (subajuste) porque la agresiva regularización de la capa `Dropout(0.2)` dificultaba el aprendizaje en las primeras épocas. El bucle manual de PyTorch demuestra que, si se le otorga al optimizador Adam el tiempo suficiente (200 épocas), la red es perfectamente capaz de superar la penalización del *Dropout* y encontrar un mínimo global mucho más preciso.
+
+  
+
+En conclusión, la implementación en PyTorch reivindica la capacidad predictiva de la LSTM, demostrando que puede casi igualar a los modelos más sencillos si el régimen de entrenamiento es lo suficientemente exhaustivo. No obstante, el principio de parsimonia (*Navaja de Ockham*) dicta la conclusión definitiva de esta práctica: si una **SimpleRNN** o una **GRU** pueden alcanzar una precisión ligeramente superior ($MAE = 0.48$) en muchas menos épocas, con menos parámetros y sin necesidad de forzar el entrenamiento, se confirman unánimemente como las arquitecturas idóneas para modelar este transformador eléctrico a corto plazo.
+
+  
+
+</div>
+
+# 4. Predicción multistep con atención
+
+En este ejercicio se abordará un problema de **predicción multistep** en series temporales. A diferencia de los ejercicios anteriores, donde el modelo predecía solo el siguiente instante, ahora el modelo deberá predecir **varios pasos consecutivos en el futuro** a partir de una ventana de observaciones pasadas.
+
+Supongamos que tenemos una serie temporal y que la última observación disponible ocurre en el instante `t`. El objetivo del modelo es predecir una secuencia completa de valores futuros consecutivos:
+
+`t+1, t+2, t+3, ..., t+n`
+
+Es decir, el modelo produce `n` predicciones seguidas en el tiempo. Es importante notar que todas estas predicciones se generan **simultáneamente en una única inferencia** del modelo. Esto es diferente de otro tipo de problema en series temporales donde se predicen **instantes específicos separados**, por ejemplo: `t+1, t+12, t+24`. Este segundo caso es común en predicción meteorológica o energética, donde interesa estimar valores a ciertas horas concretas del futuro.
+
+En este ejercicio trabajaremos con predicción multistep directa, donde el modelo aprende a generar todo el horizonte futuro a la vez.
+
+**Ejercicio [2.5 pts.].** En este ejercicio vas a construir un modelo LSTM con mecanismo de atención para predecir múltiples pasos futuros de la serie temporal ETTh1. Además, explorarás qué partes de la secuencia de entrada influyen más en las predicciones mediante visualización de los pesos de atención.
+
+- Usa el dataset ETTh1.
+- Modifica la función para crear secuencias para poder realizar predicciones a múltipes pasos adelante (multistep prediction).
+- Divide los datos en un 70% para entrenamiento, 15% validación y 15% test. Escala los valores entre 0 y 1.
+- Implementa un modelo secuencial en Tensorflow con:
+    - Una capa `LSTM`.
+    - Una capa de atención (`Attention`) sobre los timesteps de la LSTM.
+    - Una capa `Dropout`.
+    - Una capa `Dense` para predecir X pasos futuros.
+    
+- Usa un tamaño de ventana de 48 y un horizonte de 10. Este horizonte de 10 implica que el modelo produce 10 predicciones simultáneamente.
+- Entrena el modelo usando `EarlyStopping` y `ReduceLROnPlateau`. Usa el mismo número de neuronas, tamaño de batch y epochs que en los ejercicios anteriores.
+- Calcula RMSE y MAE en entrenamiento, validación y test y añádelos a la tabla comparativa. Las métricas RMSE y MAE se calcularán **promediando el error por muestra** dentro de la ventana de predicción.
+- Visualiza el error por horizonte cada horizonte de manera gráfica para el RMSE.
+- Extrae los pesos de atención para algunos ejemplos de conjunto de test. Visualiza los pesos de atención sobre la secuencia de entrada para identificar qué timesteps influyen más en la predicción. ¿Que conclusiones puedes extraer en base a la gráfica?
