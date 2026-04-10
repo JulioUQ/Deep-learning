@@ -918,6 +918,7 @@ Para mitigar esto, se desarrollaron arquitecturas más complejas como **LSTM (Lo
 
 
 ---
+---
 # 2. Problema de predicción multivariante
 
 <div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
@@ -1218,10 +1219,8 @@ En conclusión, la comparativa demuestra el principio de parsimonia en Deep Lear
 **Solución: El analisis se ha realizado junto a los resultados obtenidos en cada apartado**
 
 ---
-
-# 3. LSTM con PyTorch
-
 ---
+# 3. LSTM con PyTorch
 
 En este ejercicio implementarás un modelo LSTM para predicción de series temporales usando **PyTorch**.
 
@@ -1488,34 +1487,17 @@ Epoch 1/200 - train_loss: 0.02415 - val_loss: 0.00380 Epoch 2/200 - train_loss: 
 ============================================================ COMPARATIVA FINAL DE ARQUITECTURAS (WS=24) - KERAS VS PYTORCH: ============================================================ Window Size Conjunto MSE RMSE MAE Modelo 24 Entrenamiento 0.93 0.97 0.66 LSTM (PyTorch) 24 Entrenamiento 0.95 0.97 0.67 SimpleRNN 24 Entrenamiento 1.11 1.05 0.75 GRU 24 Entrenamiento 1.29 1.14 0.82 LSTM 24 Test 0.42 0.65 0.44 LSTM (PyTorch) 24 Test 0.43 0.66 0.46 SimpleRNN 24 Test 0.47 0.68 0.49 GRU 24 Test 0.61 0.78 0.58 LSTM 24 Validación 0.36 0.60 0.44 SimpleRNN 24 Validación 0.41 0.64 0.48 GRU 24 Validación 0.45 0.67 0.51 LSTM (PyTorch) 24 Validación 0.50 0.70 0.53 LSTM ============================================================
 
 <div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
-
 <p><strong>Solución:</strong> </p>
 
-  
+Al evaluar el conjunto de Test, la **LSTM de PyTorch lidera el ranking global** con un MAE de 0.44°C y un RMSE de 0.65, seguida de cerca por la SimpleRNN (MAE = 0.46) y la GRU (MAE = 0.49), ambas de Keras. La LSTM de Keras sigue siendo la arquitectura con peor rendimiento (MAE = 0.58), confirmando el patrón observado en el ejercicio anterior.
 
-Al evaluar el conjunto de **Test**, las arquitecturas menos parametrizadas (la **SimpleRNN** y la **GRU** implementadas en Keras) mantienen su liderazgo indiscutible, compartiendo un MAE de $0.48^\circ C$ y demostrando ser las estructuras más eficientes para capturar el ciclo térmico diario.
+La diferencia entre las dos implementaciones de LSTM no reside en las ecuaciones de la red, sino en la dinámica del bucle de entrenamiento. En Keras, el modelo fue detenido por `EarlyStopping` en la época 21; en PyTorch, al implementar el bucle manualmente y prescindir de este freno, el modelo iteró durante las 200 épocas completas. Esto se traduce también en el conjunto de entrenamiento, donde la LSTM de PyTorch alcanza un RMSE de 0.97, igualando a la SimpleRNN y muy por encima del 1.14 de la LSTM de Keras. Como se indicó en el ejercicio 2, la LSTM de Keras sufría un ligero *underfitting* causado por la combinación del `Dropout(0.2)` y la parada temprana. El bucle manual de PyTorch demuestra que, si se otorga al optimizador Adam el tiempo suficiente, la red supera esa penalización y converge hacia un mínimo considerablemente más preciso.
 
-  
-
-Por otro lado, mientras que la LSTM de Keras obtuvo los peores resultados globales (MAE de 0.58 en Test), su homóloga matemática programada en PyTorch ha logrado reducir ese error a **0.50**, empatando en el RMSE (0.70) con la GRU. Aún más destacable es su desempeño en el conjunto de **Entrenamiento**, donde la LSTM de PyTorch alcanza un RMSE de **0.98**, el valor más bajo de toda la tabla, superando con creces el pobre ajuste de la LSTM de Keras (1.14).
-
-  
-
-La diferencia entre los modelos LSTM de Keras y el modelo LSTM de pytorch no residen en las ecuaciones de la red, si no en la **dinamica del bucle de entrenamiento:**
-
-  
-
-1. **La ausencia de EarlyStopping:** En Keras, el modelo estaba condicionado por un *callback* de parada temprana que cortaba el entrenamiento al detectar un estancamiento en la validación. En PyTorch, al implementar el bucle manualmente y prescindir de este freno, el modelo fue forzado a iterar durante las **200 épocas completas**.
-
-2. **Superación del Underfitting:** Como se analizó en el ejercicio 2, la LSTM de Keras sufrió *underfitting* (subajuste) porque la agresiva regularización de la capa `Dropout(0.2)` dificultaba el aprendizaje en las primeras épocas. El bucle manual de PyTorch demuestra que, si se le otorga al optimizador Adam el tiempo suficiente (200 épocas), la red es perfectamente capaz de superar la penalización del *Dropout* y encontrar un mínimo global mucho más preciso.
-
-  
-
-En conclusión, la implementación en PyTorch reivindica la capacidad predictiva de la LSTM, demostrando que puede casi igualar a los modelos más sencillos si el régimen de entrenamiento es lo suficientemente exhaustivo. No obstante, el principio de parsimonia (*Navaja de Ockham*) dicta la conclusión definitiva de esta práctica: si una **SimpleRNN** o una **GRU** pueden alcanzar una precisión ligeramente superior ($MAE = 0.48$) en muchas menos épocas, con menos parámetros y sin necesidad de forzar el entrenamiento, se confirman unánimemente como las arquitecturas idóneas para modelar este transformador eléctrico a corto plazo.
-
-  
-
+En conclusión, la implementación en PyTorch reivindica la capacidad predictiva de la LSTM, demostrando que puede superar a los modelos más sencillos cuando el régimen de entrenamiento es suficientemente exhaustivo. No obstante, el principio de parsimonia plantea una reflexión final: si una SimpleRNN o una GRU logran resultados competitivos (MAE de 0.46 y 0.49 respectivamente) en muchas menos épocas, con menos parámetros y sin forzar el entrenamiento, se confirman como las arquitecturas más eficientes para modelar este transformador a corto plazo, mientras que la LSTM solo alcanza su potencial real bajo condiciones de entrenamiento más exhaustivas.
 </div>
+
+---
+---
 
 # 4. Predicción multistep con atención
 
@@ -1545,3 +1527,129 @@ En este ejercicio trabajaremos con predicción multistep directa, donde el model
 - Calcula RMSE y MAE en entrenamiento, validación y test y añádelos a la tabla comparativa. Las métricas RMSE y MAE se calcularán **promediando el error por muestra** dentro de la ventana de predicción.
 - Visualiza el error por horizonte cada horizonte de manera gráfica para el RMSE.
 - Extrae los pesos de atención para algunos ejemplos de conjunto de test. Visualiza los pesos de atención sobre la secuencia de entrada para identificar qué timesteps influyen más en la predicción. ¿Que conclusiones puedes extraer en base a la gráfica?
+
+## 4.1. Preparación de Datos
+
+Utilizamos los datos ya escalados y divididos en el ejercicio 1, pues concuerda con los criterios indicados en este ejercicio.
+
+A diferencia del ejercicio 1, en este caso generamos las secuencias con la función `create_sequences_multistep()`, que permite realizar **predicciones multistep**.
+
+En lugar de predecir un único valor, cada ventana de tamaño `window_size` se utiliza para estimar los siguientes `horizon` valores de la variable `OT`. Por ejemplo, con `window_size = 48` y `horizon = 10`, se emplean las filas 0–47 como entrada y se predicen las filas 48–57.
+
+```python
+# --- Parámetros del Ejercicio 4 ---
+WS_48 = 48
+HORIZON = 10
+```
+
+```python
+# Creamos las secuencias multistep con los datos escalados y divididos del Ejercicio 1
+X_train_ws_48, y_train_ws_48 = create_sequences_multistep(train_scaled, WS_48, HORIZON)
+X_val_ws_48,   y_val_ws_48   = create_sequences_multistep(val_scaled,   WS_48, HORIZON)
+X_test_ws_48,  y_test_ws_48  = create_sequences_multistep(test_scaled,  WS_48, HORIZON)
+  
+# Guardamos todo en el diccionario
+all_sequences_Ej4 = {
+    'X_train': X_train_ws_48, 'y_train': y_train_ws_48,
+    'X_val': X_val_ws_48,     'y_val': y_val_ws_48,
+    'X_test': X_test_ws_48,   'y_test': y_test_ws_48
+    }
+  
+print(f"Secuencias mutistep para window_size = {WS_48}:")
+print(f" - X_train: {X_train_ws_48.shape} | y_train: {y_train_ws_48.shape}")
+print(f" - X_val:   {X_val_ws_48.shape}   | y_val: {y_val_ws_48.shape}")
+print(f" - X_test:  {X_test_ws_48.shape}  | y_test: {y_test_ws_48.shape}")
+```
+
+
+## 4.2. Definición y Entrenamiento del Modelo LSTM Multistep con Atención
+
+Para abordar este problema de predicción múltiple directa, la arquitectura del modelo requiere un diseño más sofisticado que en los ejercicios anteriores. De acuerdo con las especificaciones técnicas de Keras, la inclusión de una capa de Atención (`Attention`) imposibilita el uso de la clase `Sequential` convencional, ya que este mecanismo exige procesar flujos de datos no lineales (requiere evaluar simultáneamente tensores de tipo *query* y *value*). Por ello, el modelo ha sido implementado utilizando la **API Funcional de TensorFlow** (como indica el profesor en el foro).
+
+La arquitectura diseñada sigue este flujo de procesamiento (indicado en el enunciado):
+
+1. **Memoria Secuencial (LSTM):** La capa de entrada proyecta la ventana de 48 horas hacia una capa LSTM. Es indispensable configurar esta capa con `return_sequences=True`. De este modo, la LSTM no colapsa la información en un único vector final, sino que expone el estado oculto de **cada una de las 48 horas** a la siguiente capa.
+2. **Mecanismo de Self-Attention:** Las 48 representaciones temporales generadas por la LSTM ingresan en la capa de Atención. El mecanismo cruza esta información consigo misma para calcular un "mapa de importancia" dinámico, permitiendo a la red discriminar qué horas del pasado son cruciales y cuáles son irrelevantes para proyectar el futuro. Esto se denomina self-attention, donde la red aprende qué *timesteps* de su propia secuencia son más relevantes para la predicción. Además, se ha habilitado el parámetro `return_attention_scores=True` para generar una matriz secundaria de pesos que extraeremos en la fase de evaluación visual.
+3. **Colapso Dimensional y Regularización:** Dado que la capa de Atención devuelve un tensor tridimensional temporal, utilizamos una capa `GlobalAveragePooling1D` para promediar y "aplanar" la señal antes de aplicar la regularización mediante la capa `Dropout` al 20% y la capa `Dense`.
+4. **Predicción Simultánea (Capa Densa):** La red finaliza en una capa `Dense` configurada con 10 neuronas (el horizonte definido), permitiendo emitir el bloque completo de las 10 predicciones futuras en una sola inferencia temporal.
+
+Para el entrenamiento se han replicado los parámetros de ejercicios anteriores, utilizando el optimizador Adam y la pérdida basada en el Error Cuadrático Medio (*MSE*). Al igual que en el ejercicio 2, la sinergia entre los *callbacks* `EarlyStopping` y `ReduceLROnPlateau` asegura que el modelo afine los pesos de manera óptima sin incurrir en sobreajuste. 
+
+Asimismo, y aprovechando la flexibilidad de la API Funcional, se ha definido paralelamente un submodelo (`attention_extractor`) que comparte los mismos pesos entrenados pero cuya única salida es la matriz de atención.
+
+```python
+# Semillas
+np.random.seed(SEED); random.seed(SEED); tf.random.set_seed(SEED)
+  
+# --- Definición de la Arquitectura (API Funcional) ---
+# Capa de Entrada
+inputs = Input(shape=(WS_48, N_FEATURES))
+  
+# Capa LSTM: debe devolver toda la secuencia (return_sequences=True)
+# para que la capa de Atención pueda evaluar todos los pasos temporales
+lstm_out = LSTM(UNITS, return_sequences=True, activation="tanh")(inputs)
+  
+# Cap de Self-Attention: compara la salida de la LSTM consigo misma (query y value)
+# Activmos return_attention_scores=True para poder graficarlos en el siguiente apartado
+attn_out, attn_weights = Attntion()([lstm_out, lstm_out], return_attention_scores=True)
+  
+# Redcimos la dimensionalidad temporal (de 3D a 2D) para pasarla a las capas densas
+pooled = GlobalAveragePooling1D()(attn_out)
+drop = Dropout(DROPOUT)(pooled)
+  
+# Capa de Salida (Predice 10 pasos a la vez)
+outputs = Dense(HORIZON)(drop)
+  
+# --- Modelo principal para entrenamiento e inferencia ---
+model_attn = Model(inputs=inputs, outputs=outputs, name="LSTM_Attention_Multistep")
+model_attn.compile(optimizer="adam", loss="mean_squared_error")
+  
+# --- Modelo secundario para extraer los pesos ---
+# Este odelo recibe la misma entrada pero devuelve la matriz con los pesos de atención
+attention_extractor = Model(inputs=inputs, outputs=attn_weights)
+  
+model_attn.summary()
+  
+# --- Entrenamiento con Callbacks ---
+early_stop = EarlyStopping(monitor="val_loss", patience=PATIENCE, restore_best_weights=True)
+reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-5, verbose=1)
+  
+print(f"\nEntrenando modelo multistep (Horizonte={HORIZON})...")
+history_attn = model_attn.fit(
+    all_sequences_Ej4['X_train'], all_sequences_Ej4['y_train'],
+    validation_data=(all_sequences_Ej4['X_val'], all_sequences_Ej4['y_val']),
+    epochs=EPOCHS,
+    batch_size=BATCH,
+    callbacks=[early_stop, reduce_lr],
+    verbose=1
+)
+```
+
+Model: "LSTM_Attention_Multistep"
+
+┏━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━┓
+┃ Layer (type)        ┃ Output Shape      ┃    Param # ┃ Connected to      ┃
+┡━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━┩
+│ input_layer_17      │ (None, 48, 7)     │          0 │ -                 │
+│ (InputLayer)        │                   │            │                   │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ lstm_1 (LSTM)       │ (None, 48, 64)    │     18,432 │ input_layer_17[0… │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ attention           │ [(None, 48, 64),  │          0 │ lstm_1[0][0],     │
+│ (Attention)         │ (None, 48, 48)]   │            │ lstm_1[0][0]      │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ global_average_poo… │ (None, 64)        │          0 │ attention[0][0]   │
+│ (GlobalAveragePool… │                   │            │                   │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ dropout_2 (Dropout) │ (None, 64)        │          0 │ global_average_p… │
+├─────────────────────┼───────────────────┼────────────┼───────────────────┤
+│ dense_17 (Dense)    │ (None, 10)        │        650 │ dropout_2[0][0]   │
+└─────────────────────┴───────────────────┴────────────┴───────────────────┘
+
+ Total params: 19,082 (74.54 KB)
+
+ Trainable params: 19,082 (74.54 KB)
+
+ Non-trainable params: 0 (0.00 B)
+ 
+Entrenando modelo multistep (Horizonte=10)... Epoch 1/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 6s 19ms/step - loss: 0.0184 - val_loss: 0.0034 - learning_rate: 0.0010 Epoch 2/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 21ms/step - loss: 0.0070 - val_loss: 0.0020 - learning_rate: 0.0010 Epoch 3/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 18ms/step - loss: 0.0059 - val_loss: 0.0017 - learning_rate: 0.0010 Epoch 4/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 19ms/step - loss: 0.0053 - val_loss: 0.0017 - learning_rate: 0.0010 Epoch 5/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 18ms/step - loss: 0.0050 - val_loss: 0.0014 - learning_rate: 0.0010 Epoch 6/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 17ms/step - loss: 0.0047 - val_loss: 0.0012 - learning_rate: 0.0010 Epoch 7/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 18ms/step - loss: 0.0042 - val_loss: 0.0020 - learning_rate: 0.0010 Epoch 8/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0039 - val_loss: 0.0016 - learning_rate: 0.0010 Epoch 9/200 187/190 ━━━━━━━━━━━━━━━━━━━━ 0s 14ms/step - loss: 0.0037 Epoch 9: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257. 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0037 - val_loss: 0.0025 - learning_rate: 0.0010 Epoch 10/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 0.0034 - val_loss: 0.0019 - learning_rate: 5.0000e-04 Epoch 11/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0033 - val_loss: 0.0022 - learning_rate: 5.0000e-04 Epoch 12/200 187/190 ━━━━━━━━━━━━━━━━━━━━ 0s 14ms/step - loss: 0.0032 Epoch 12: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628. 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 0.0032 - val_loss: 0.0021 - learning_rate: 5.0000e-04 Epoch 13/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 20ms/step - loss: 0.0031 - val_loss: 0.0021 - learning_rate: 2.5000e-04 Epoch 14/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 21ms/step - loss: 0.0030 - val_loss: 0.0017 - learning_rate: 2.5000e-04 Epoch 15/200 189/190 ━━━━━━━━━━━━━━━━━━━━ 0s 14ms/step - loss: 0.0030 Epoch 15: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814. 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0030 - val_loss: 0.0020 - learning_rate: 2.5000e-04 Epoch 16/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0029 - val_loss: 0.0021 - learning_rate: 1.2500e-04
