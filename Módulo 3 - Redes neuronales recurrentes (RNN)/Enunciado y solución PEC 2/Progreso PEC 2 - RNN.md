@@ -1564,18 +1564,28 @@ print(f" - X_test:  {X_test_ws_48.shape}  | y_test: {y_test_ws_48.shape}")
 
 ## 4.2. Definición y Entrenamiento del Modelo LSTM Multistep con Atención
 
-Para abordar este problema de predicción múltiple directa, la arquitectura del modelo requiere un diseño más sofisticado que en los ejercicios anteriores. De acuerdo con las especificaciones técnicas de Keras, la inclusión de una capa de Atención (`Attention`) imposibilita el uso de la clase `Sequential` convencional, ya que este mecanismo exige procesar flujos de datos no lineales (requiere evaluar simultáneamente tensores de tipo *query* y *value*). Por ello, el modelo ha sido implementado utilizando la **API Funcional de TensorFlow** (como indica el profesor en el foro).
+Para abordar este problema de predicción múltiple directa, la arquitectura del modelo requiere un diseño notablemente más sofisticado. De acuerdo con las especificaciones técnicas de Keras, la inclusión de una capa de Atención (`Attention`) imposibilita el uso de la clase `Sequential` convencional. Este mecanismo exige procesar flujos de datos no lineales, requiriendo evaluar simultáneamente tensores distintos (actuando como *query* y *value*). Por ello, tal y como se ha aclarado en el foro de la asignatura, el modelo se ha implementado utilizando la **API Funcional de TensorFlow**, lo que permite una topología de red mucho más flexible.
 
-La arquitectura diseñada sigue este flujo de procesamiento (indicado en el enunciado):
+La arquitectura diseñada sigue este flujo de procesamiento:
 
-1. **Memoria Secuencial (LSTM):** La capa de entrada proyecta la ventana de 48 horas hacia una capa LSTM. Es indispensable configurar esta capa con `return_sequences=True`. De este modo, la LSTM no colapsa la información en un único vector final, sino que expone el estado oculto de **cada una de las 48 horas** a la siguiente capa.
-2. **Mecanismo de Self-Attention:** Las 48 representaciones temporales generadas por la LSTM ingresan en la capa de Atención. El mecanismo cruza esta información consigo misma para calcular un "mapa de importancia" dinámico, permitiendo a la red discriminar qué horas del pasado son cruciales y cuáles son irrelevantes para proyectar el futuro. Esto se denomina self-attention, donde la red aprende qué *timesteps* de su propia secuencia son más relevantes para la predicción. Además, se ha habilitado el parámetro `return_attention_scores=True` para generar una matriz secundaria de pesos que extraeremos en la fase de evaluación visual.
-3. **Colapso Dimensional y Regularización:** Dado que la capa de Atención devuelve un tensor tridimensional temporal, utilizamos una capa `GlobalAveragePooling1D` para promediar y "aplanar" la señal antes de aplicar la regularización mediante la capa `Dropout` al 20% y la capa `Dense`.
-4. **Predicción Simultánea (Capa Densa):** La red finaliza en una capa `Dense` configurada con 10 neuronas (el horizonte definido), permitiendo emitir el bloque completo de las 10 predicciones futuras en una sola inferencia temporal.
+1. **Memoria Secuencial (LSTM):** La capa de entrada proyecta la ventana de 48 horas hacia una capa LSTM. Es indispensable configurar esta capa con `return_sequences=True`. De este modo, la LSTM no colapsa la información temporal, sino que expone el estado oculto de **cada una de las 48 horas** a la siguiente capa.
+2. **Mecanismo de Self-Attention:** Las 48 representaciones temporales generadas ingresan en la capa de Atención. El mecanismo cruza esta información consigo misma (estrategia de *self-attention*) para calcular un "mapa de importancia" dinámico, permitiendo a la red discriminar qué instantes temporales (*timesteps*) de su propio pasado reciente son cruciales para proyectar el futuro. Además, se habilita el parámetro `return_attention_scores=True` para generar la matriz secundaria de pesos que se analizará visualmente en el último apartado.
+3. **Colapso Dimensional y Regularización:** Dado que la capa de Atención devuelve un tensor tridimensional, se utiliza una capa `GlobalAveragePooling1D` para promediar y "aplanar" la señal a dos dimensiones. Inmediatamente después, se aplica una regularización mediante `Dropout(0.2)` para prevenir el sobreajuste.
+4. **Predicción Simultánea (Capa Densa):** La red finaliza en una capa `Dense` configurada con 10 neuronas (el horizonte $HORIZON$ definido), emitiendo el bloque completo de predicciones futuras en una sola inferencia.
 
-Para el entrenamiento se han replicado los parámetros de ejercicios anteriores, utilizando el optimizador Adam y la pérdida basada en el Error Cuadrático Medio (*MSE*). Al igual que en el ejercicio 2, la sinergia entre los *callbacks* `EarlyStopping` y `ReduceLROnPlateau` asegura que el modelo afine los pesos de manera óptima sin incurrir en sobreajuste. 
+### 4.2.1. Análisis de la Complejidad Paramétrica
 
-Asimismo, y aprovechando la flexibilidad de la API Funcional, se ha definido paralelamente un submodelo (`attention_extractor`) que comparte los mismos pesos entrenados pero cuya única salida es la matriz de atención.
+Al revisar el `model.summary()`, observamos que este modelo cuenta con un total de **19.082 parámetros entrenables**. Si lo comparamos con la arquitectura LSTM *single-step* del Ejercicio 2 (que tenía 18.497 parámetros), el aumento es sorprendentemente pequeño a pesar de la complejidad añadida. Este fenómeno se explica al desglosar las capas:
+
+* La capa **LSTM** sigue concentrando el grueso computacional con **18.432 parámetros**, exactamente los mismos que en el ejercicio anterior. Como vimos en la SimpleRNN, los pesos de una capa recurrente no dependen de la longitud temporal de la ventana (48 horas), sino únicamente de sus 64 unidades internas y las 7 variables de entrada.
+* La capa de **Attention** y la capa de **GlobalAveragePooling1D** aportan **0 parámetros** entrenables. La atención de Keras (basada en el producto escalar o *dot-product attention*) es una operación puramente matemática de alineación entre tensores que no requiere aprender nuevos pesos de forma predeterminada.
+* La ligera diferencia de complejidad reside exclusivamente en la **capa Densa final**, que pasa de tener 65 parámetros (en el modelo *single-step*) a **650 parámetros**. Esto se debe a que ahora conecta las 64 unidades extraídas del *pooling* con 10 neuronas de salida independientes (más sus 10 sesgos correspondientes), generando así el horizonte múltiple.
+
+### 4.2.2. Dinámica del Entrenamiento
+
+Para el entrenamiento se mantuvieron las semillas de reproducibilidad y los parámetros base (optimizador Adam, pérdida MSE y lotes de 64). Los registros del entrenamiento muestran un comportamiento muy dinámico por parte de los *callbacks*. 
+
+La red alcanzó su mejor error de validación ($0.0012$) rápidamente en la época 6. A partir de ese punto, el error comenzó a oscilar levemente, lo que provocó que el mecanismo `ReduceLROnPlateau` interviniera de forma agresiva en las épocas 9, 12 y 15, reduciendo la tasa de aprendizaje desde el $0.001$ inicial hasta $0.000125$. Finalmente, al no lograr superar el mínimo alcanzado en la validación, el `EarlyStopping` detuvo el entrenamiento prematuramente en la época 16, restaurando los pesos óptimos de la red para garantizar su capacidad de generalización sobre los datos de test.
 
 ```python
 # Semillas
@@ -1653,3 +1663,193 @@ Model: "LSTM_Attention_Multistep"
  Non-trainable params: 0 (0.00 B)
  
 Entrenando modelo multistep (Horizonte=10)... Epoch 1/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 6s 19ms/step - loss: 0.0184 - val_loss: 0.0034 - learning_rate: 0.0010 Epoch 2/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 21ms/step - loss: 0.0070 - val_loss: 0.0020 - learning_rate: 0.0010 Epoch 3/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 18ms/step - loss: 0.0059 - val_loss: 0.0017 - learning_rate: 0.0010 Epoch 4/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 19ms/step - loss: 0.0053 - val_loss: 0.0017 - learning_rate: 0.0010 Epoch 5/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 18ms/step - loss: 0.0050 - val_loss: 0.0014 - learning_rate: 0.0010 Epoch 6/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 17ms/step - loss: 0.0047 - val_loss: 0.0012 - learning_rate: 0.0010 Epoch 7/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 18ms/step - loss: 0.0042 - val_loss: 0.0020 - learning_rate: 0.0010 Epoch 8/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0039 - val_loss: 0.0016 - learning_rate: 0.0010 Epoch 9/200 187/190 ━━━━━━━━━━━━━━━━━━━━ 0s 14ms/step - loss: 0.0037 Epoch 9: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257. 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0037 - val_loss: 0.0025 - learning_rate: 0.0010 Epoch 10/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 0.0034 - val_loss: 0.0019 - learning_rate: 5.0000e-04 Epoch 11/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0033 - val_loss: 0.0022 - learning_rate: 5.0000e-04 Epoch 12/200 187/190 ━━━━━━━━━━━━━━━━━━━━ 0s 14ms/step - loss: 0.0032 Epoch 12: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628. 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 0.0032 - val_loss: 0.0021 - learning_rate: 5.0000e-04 Epoch 13/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 20ms/step - loss: 0.0031 - val_loss: 0.0021 - learning_rate: 2.5000e-04 Epoch 14/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 4s 21ms/step - loss: 0.0030 - val_loss: 0.0017 - learning_rate: 2.5000e-04 Epoch 15/200 189/190 ━━━━━━━━━━━━━━━━━━━━ 0s 14ms/step - loss: 0.0030 Epoch 15: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814. 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0030 - val_loss: 0.0020 - learning_rate: 2.5000e-04 Epoch 16/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 0.0029 - val_loss: 0.0021 - learning_rate: 1.2500e-04
+## 4.3. Análisis Comparativo Final: Single-step vs. Multistep
+
+La tabla comparativa final (Incluyendo Multistep) ofrece una perspectiva integral sobre las capacidades y limitaciones de las Redes Neuronales Recurrentes aplicadas a este transformador eléctrico.
+
+**1. El Impacto del Horizonte Predictivo (*Task Difficulty*)**: 
+La conclusión más evidente de la comparativa es el salto cuantitativo en el error al pasar de modelos *single-step* a *multistep*. Mientras que los modelos del Ejercicio 2 logran predecir la temperatura de la próxima hora con un MAE de apenas $0.44^\circ C - 0.49^\circ C$, el modelo `LSTM + Attention` registra un MAE de $1.64^\circ C$.
+
+Este incremento no denota un fracaso arquitectónico, sino un cambio radical en la entropía del problema. Predecir un vector simultáneo de 10 horas futuras ($t+1 \dots t+10$) implica absorber y propagar una incertidumbre mucho mayor, lo que inherentemente eleva el error acumulado de la ventana.
+
+**2. La validación del cálculo métrico por muestra**: 
+Los resultados del modelo con Atención demuestran la correcta aplicación del cálculo "por muestra" exigido para este problema. Matemáticamente, la raíz cuadrada del MSE global obtenido ($4.50$) equivale a $2.12$; sin embargo, el RMSE registrado es de $1.80$. Esta discrepancia confirma que el error se ha procesado calculando primero la desviación interna de cada trayectoria predictiva de 10 horas, promediando posteriormente todos los escenarios del conjunto de Test.
+
+Por último resaltar que la tabla consolida cinco arquitecturas evaluadas a lo largo de la práctica, aunque antes de extraer conclusiones **es fundamental señalar que la comparación no es completamente directa**. Los cuatro primeros modelos resuelven un problema de predicción a un único paso (WS=24), mientras que el modelo LSTM+Attention afronta un problema fundamentalmente más difícil, prediciendo 10 pasos simultáneos con una ventana de 48 horas.
+
+```python
+# Evaluación de los tres conjuntos
+mse_tr, rmse_tr, mae_tr, _, _ = evaluate_multistep(model_attn, all_sequences_Ej4['X_train'], all_sequences_Ej4['y_train'])
+mse_v, rmse_v, mae_v, _, _ = evaluate_multistep(model_attn, all_sequences_Ej4['X_val'], all_sequences_Ej4['y_val'])
+mse_te, rmse_te, mae_te, y_real_test, y_pred_test = evaluate_multistep(model_attn, all_sequences_Ej4['X_test'], all_sequences_Ej4['y_test'])
+  
+# Creación de nuevos registros
+resultados_attn = [
+    {"Window Size": WS_48, "Conjunto": "Entrenamiento", "MSE": round(mse_tr, 4), "RMSE": round(rmse_tr, 4), "MAE": round(mae_tr, 4), "Modelo": "LSTM + Attention"},
+    {"Window Size": WS_48, "Conjunto": "Validación", "MSE": round(mse_v, 4), "RMSE": round(rmse_v, 4), "MAE": round(mae_v, 4), "Modelo": "LSTM + Attention"},
+    {"Window Size": WS_48, "Conjunto": "Test", "MSE": round(mse_te, 4), "RMSE": round(rmse_te, 4), "MAE": round(mae_te, 4), "Modelo": "LSTM + Attention"}
+]
+  
+# Concatenación con la tabla anterior
+df_resultados_Ej4 = pd.concat([df_resultados_Ej3, pd.DataFrame(resultados_attn)], ignore_index=True)
+print("="*60)
+print("TABLA COMPARATIVA FINAL (Incluyendo Multistep):")
+print("="*60)
+
+# Filtramos solo el conjunto de Test para ver cómo queda en el ranking
+print(df_resultados_Ej4[df_resultados_Ej4['Conjunto'] == 'Test'].sort_values(by='RMSE').to_string(index=False))
+print("="*60)
+  
+# Guardar en Excel
+ruta_excel_ej4 = r'..\LSTM_Multistep_Attention\df_resultados_Ej4.xlsx'
+
+with pd.ExcelWriter(ruta_excel_ej4, engine='openpyxl', mode='w') as writer:
+    df_resultados_Ej4.to_excel(writer, sheet_name='LSTM_Multistep_Attention', index=False)
+```
+
+============================================================ TABLA COMPARATIVA FINAL (Incluyendo Multistep): ============================================================ Window Size Conjunto MSE RMSE MAE Modelo 
+24 Test 0.42 0.65 0.44 LSTM (PyTorch) 
+24 Test 0.43 0.66 0.46 SimpleRNN 
+24 Test 0.47 0.68 0.49 GRU 
+24 Test 0.61 0.78 0.58 LSTM 
+48 Test 4.50 1.80 1.64 LSTM + Attention ============================================================
+
+## 4.4. Visualizaciones: Degradación del RMSE por Horizonte y Mapa de Pesos de Atención
+
+### 4.4.1. Dinámica de la incertidumbre (Degradación del RMSE)
+
+En la primera gráfica se observa cómo evoluciona el error (RMSE) a medida que intentamos predecir más lejos en el futuro. Lejos de ser una línea recta ascendente, la curva revela un comportamiento particular:
+
+* **El valle de corto plazo:** El error inicial en la hora 1 (aprox. **2.12°C**) desciende ligeramente hasta alcanzar un "punto dulce" de mayor precisión en las horas 3 y 4 (bajando a **2.04°C**). Esto sugiere que el modelo encuentra un patrón transitorio (probablemente una inercia térmica) en ese tramo temporal que le resulta más fácil de estimar.
+* **Degradación a medio plazo:** A partir de la hora 5, la entropía del sistema eléctrico domina por completo la predicción. El error escala de forma pronunciada e ininterrumpida hasta superar los **2.22°C** en la hora 10. 
+
+Por lo tanto, podriamos concluir que la capacidad de anticipación del modelo tiene "fecha de caducidad". La utilidad real de esta red se concentra en las primeras 4-5 horas, mientras que más allá de ese límite, la acumulación de incertidumbre hace que el pronóstico pierda fiabilidad.
+
+```python
+# Gráfica de Degradación del RMSE por Horizonte
+rmse_por_horizonte = []
+
+# Iteramos sobre cada una de las 10 horas futuras (de 0 a 9 en los índices)
+for h in range(HORIZON):
+    # Calculamos el MSE de esa hora en concreto para todas las muestras
+    mse_h = np.mean(np.square(y_real_test[:, h] - y_pred_test[:, h]))
+    # Raíz cuadrada para obtener el RMSE de esa hora
+    rmse_h = np.sqrt(mse_h)
+    rmse_por_horizonte.append(rmse_h)
+  
+plt.figure(figsize=(10, 4))
+plt.plot(range(1, HORIZON + 1), rmse_por_horizonte, marker='o', linestyle='-', color='purple')
+plt.title("Degradación del RMSE según el horizonte de predicción", fontsize=14)
+plt.xlabel("Horizonte futuro (Horas)", fontsize=12)
+plt.ylabel("RMSE (°C)", fontsize=12)
+plt.xticks(range(1, HORIZON + 1))
+plt.grid(alpha=0.3)
+plt.tight_layout()
+  
+# Guardar la gráfica
+ruta_grafica_rmse = os.path.join(save_dir_ej4, "Degradacion_RMSE_Horizonte.png")
+plt.savefig(ruta_grafica_rmse, dpi=300, bbox_inches="tight")
+plt.show()
+```
+
+![[Pasted image 20260410150242.png]]
+
+### 4.4.2. El fenómeno de la Atención Uniforme (Pesos de Atención)
+
+En la segunda gráfica observamos una distribución **prácticamente plana y uniforme**. Cada una de las 48 horas pasadas recibe un peso de atención casi idéntico, situado en torno a **0.02**. Para este problema y configuración concreta, el mecanismo de Atención **no ha logrado extraer dependencias puntuales**. Al enfrentarse a la difícil tarea de predecir 10 horas futuras de golpe, la red ha "descubierto" que la estrategia matemática más segura para minimizar el error cuadrático medio (MSE) no es arriesgarse a mirar eventos específicos, sino comportarse como un **filtro de media móvil ponderada global**. Toma todo el bloque de 48 horas, lo promedia casi a partes iguales, y proyecta esa inercia suavizada hacia el futuro.
+
+Este fenómeno, conocido como **difuminación de la información**, ocurre porque la LSTM ya acumula y mezcla la memoria temporal, haciendo que todos los estados se parezcan entre sí. Para que el mecanismo de Atención aporte un valor diferencial real, la solución directa sería romper esta redundancia secuencial aplicando otras arquitecturas como una **LSTM Bidireccional**(para enriquecer y diferenciar el contexto de cada instante).
+
+```python
+# Mapa de Pesos de Atención
+# Seleccionamos una muestra aleatoria del conjunto de test (ej. índice 100)
+sample_idx = 100
+X_sample = all_sequences_Ej4['X_test'][sample_idx:sample_idx+1]
+  
+# Usamos nuestro modelo extractor para sacar la matriz de pesos [Forma: 1, 48, 48]
+pesos_attn = attention_extractor.predict(X_sample, verbose=0)
+  
+# Promediamos la atención para ver qué horas importan más de media
+pesos_promedio = np.mean(pesos_attn[0], axis=0)
+  
+plt.figure(figsize=(12, 4))
+plt.bar(range(WS_48), pesos_promedio, color='orange')
+plt.title(f"Pesos de Atención: Importancia de cada hora pasada (Muestra {sample_idx})", fontsize=14)
+plt.xlabel("Pasos hacia atrás (0 = Hace 48h, 47 = Última hora registrada)", fontsize=12)
+plt.ylabel("Peso de Atención", fontsize=12)
+plt.grid(axis='y', alpha=0.3)
+plt.tight_layout()
+  
+# Guardar la gráfica
+ruta_grafica_attn = os.path.join(save_dir_ej4, f"Pesos_Atencion_Muestra_{sample_idx}.png")
+plt.savefig(ruta_grafica_attn, dpi=300, bbox_inches="tight")
+plt.show()
+```
+
+![[Pasted image 20260410150315.png]]
+
+<div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+
+<p><strong>¿Que conclusiones puedes extraer en base a la gráfica?:</strong></p>
+
+<p><strong>Solución: Las interpretaciones y conclusiones aparecen en los apartados 4.4.1 y 4.4.2</strong></p>
+
+</div>
+
+---
+---
+
+# 5. Problema de clasificación de texto
+
+<div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+
+**Ejercicio [2 pts.].** Aplica redes neuronales recurrentes al problema de clasificación de texto utilizando un modelo GRU y el dataset **AG News**. El objetivo es construir un clasificador capaz de asignar cada noticia a una de sus cuatro categorías (world, sports, business y science/technology). Para ello:
+- Carga el dataset **AG News** usando `Tensorflow Datasets`. Más información sobre el dataset: https://www.tensorflow.org/datasets/catalog/ag_news_subset?hl=es-419
+- Realiza el preprocesado de los textos:
+    - Tokeniza los textos y limita el vocabulario a 20 000 palabras.
+    - Convierte los textos en secuencias numéricas.
+    - Aplica *padding* o *truncation* para que todas las secuencias tengan una longitud fija de 100.
+    - Divide los datos en un 80% para entrenamiento y 20% para test.
+- Construye un modelo secuencial con:
+    - Una capa `Embedding` de dimensión 128.
+    - Una capa `GRU`.
+    - Una capa `Dropout`.
+    - Una capa de salida `Dense`.
+
+- Entrena el modelo utilizando `EarlyStopping`.
+- Evalúa el rendimiento del modelo usando la métrica de `accuracy`, calcula la matriz de confusión y muestra el classification report.
+- Visualiza las curvas de loss de entrenamiento y validación.
+
+Finalmente, responde a las siguientes cuestiones:
+- ¿Por qué es necesario que todas las secuencias tengan la misma longitud?
+- ¿Qué efecto tendría truncar las secuencias de forma demasiado agresiva sobre el rendimiento del clasificador?
+</div>
+
+## 5.1. Carga del *AG News dataset*
+
+AG es una colección de más de 1 millón de artículos de noticias. ComeToMyHead ha recopilado artículos de noticias de más de 2000 fuentes de noticias en más de 1 año de actividad. ComeToMyHead es un motor de búsqueda de noticias académicas que funciona desde julio de 2004. La comunidad académica proporciona el conjunto de datos con fines de investigación en minería de datos (agrupación, clasificación, etc.), recuperación de información (clasificación, búsqueda, etc.), xml, compresión de datos, transmisión de datos y cualquier otra actividad no comercial. 
+
+El conjunto de datos de clasificación de temas de noticias de AG se construye eligiendo las 4 clases más grandes del corpus original. Cada clase contiene 30.000 muestras de entrenamiento y 1.900 muestras de prueba. El número total de muestras de entrenamiento es de 120.000 y de pruebas de 7.600.
+
+```python
+# Cargar el dataset AG News
+(ds_train, ds_test), ds_info = tfds.load(
+    'ag_news_subset',
+    split=['train', 'test'],
+    shuffle_files=True,
+    as_supervised=False,  # Devuelve dict con 'title', 'description', 'label'
+    with_info=True
+)
+  
+# Información del dataset
+print(ds_info)
+```
+
+
+WARNING:absl:Variant folder [C:\Users\jubeda2\tensorflow_datasets\ag_news_subset\1.0.0](file:///C:/Users/jubeda2/tensorflow_datasets/ag_news_subset/1.0.0) has no dataset_info.json
+
+Downloading and preparing dataset Unknown size (download: Unknown size, generated: Unknown size, total: Unknown size) to [C:\Users\jubeda2\tensorflow_datasets\ag_news_subset\1.0.0...](file:///C:/Users/jubeda2/tensorflow_datasets/ag_news_subset/1.0.0...)
+
+[c:\Users\jubeda2\AppData\Local\Programs\Python\Python312\Lib\site-packages\tqdm\auto.py:21](file:///C:/Users/jubeda2/AppData/Local/Programs/Python/Python312/Lib/site-packages/tqdm/auto.py:21): TqdmWarning: IProgress not found. Please update jupyter and ipywidgets. See [https://ipywidgets.readthedocs.io/en/stable/user_install.html](https://ipywidgets.readthedocs.io/en/stable/user_install.html) from .autonotebook import tqdm as notebook_tqdm Dl Completed...: 0 url [00:00, ? url/s] Dl Completed...: 0%| | 0/1 [00:00<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:03<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:03<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:03<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:03<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:03<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:03<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:04<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:04<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:04<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:04<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:04<?, ? url/s] Dl Completed...: 0%| | 0/1 [00:04<?, ? url/s] Dl Completed...: 100%|██████████| 1/1 [00:04<00:00, 4.65s/ url] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 4.65s/ url] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 4.65s/ url] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 4.65s/ url] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 4.65s/ url] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 4.65s/ url] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 4.65s/ url] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 4.65s/ url] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 4.65s/ url] Extraction completed...: 100%|██████████| 4/4 [00:05<00:00, 1.30s/ file] Dl Size...: 100%|██████████| 11/11 [00:05<00:00, 2.12 MiB/s] Dl Completed...: 100%|██████████| 1/1 [00:05<00:00, 5.20s/ url]
+
+Dataset ag_news_subset downloaded and prepared to [C:\Users\jubeda2\tensorflow_datasets\ag_news_subset\1.0.0.](file:///C:/Users/jubeda2/tensorflow_datasets/ag_news_subset/1.0.0.) Subsequent calls will reuse this data. tfds.core.DatasetInfo( name='ag_news_subset', full_name='ag_news_subset/1.0.0', description=""" AG is a collection of more than 1 million news articles. News articles have been gathered from more than 2000 news sources by ComeToMyHead in more than 1 year of activity. ComeToMyHead is an academic news search engine which has been running since July, 2004. The dataset is provided by the academic comunity for research purposes in data mining (clustering, classification, etc), information retrieval (ranking, search, etc), xml, data compression, data streaming, and any other non-commercial activity. For more information, please refer to the link [http://www.di.unipi.it/~gulli/AG_corpus_of_news_articles.html](http://www.di.unipi.it/~gulli/AG_corpus_of_news_articles.html) . The AG's news topic classification dataset is constructed by Xiang Zhang (xiang.zhang@nyu.edu) from the dataset above. It is used as a text classification benchmark in the following paper: Xiang Zhang, Junbo Zhao, Yann LeCun. Character-level Convolutional Networks for Text Classification. Advances in Neural Information Processing Systems 28 (NIPS 2015). The AG's news topic classification dataset is constructed by choosing 4 largest classes from the original corpus. Each class contains 30,000 training samples and 1,900 testing samples. The total number of training samples is 120,000 and testing 7,600. """, homepage='[https://arxiv.org/abs/1509.01626](https://arxiv.org/abs/1509.01626)', data_dir='C:\\Users\\jubeda2\\tensorflow_datasets\\ag_news_subset\\1.0.0', file_format=tfrecord, download_size=11.24 MiB, dataset_size=35.79 MiB, features=FeaturesDict({ 'description': Text(shape=(), dtype=string), 'label': ClassLabel(shape=(), dtype=int64, num_classes=4), 'title': Text(shape=(), dtype=string), }), supervised_keys=('description', 'label'), disable_shuffling=False, nondeterministic_order=False, splits={ 'test': <SplitInfo num_examples=7600, num_shards=1>, 'train': <SplitInfo num_examples=120000, num_shards=1>, }, citation="""@misc{zhang2015characterlevel, title={Character-level Convolutional Networks for Text Classification}, author={Xiang Zhang and Junbo Zhao and Yann LeCun}, year={2015}, eprint={1509.01626}, archivePrefix={arXiv}, primaryClass={cs.LG} }""", )
