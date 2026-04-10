@@ -10,7 +10,6 @@
 </div>
 <div style="width:100%;">&nbsp;</div>
 
-
 # PEC 2: Redes neuronales recurrentes con Keras
 
 
@@ -34,36 +33,33 @@ A continuación se incluyen las librerías necesarias para realizar esta PEC:
 
 ```python
 # Proporciona funciones para interactuar con el sistema operativo (como rutas de archivos)
-import os  
-
-# Permite modificar aspectos del entorno de ejecución de Python, como la lista de rutas de búsqueda de módulos (sys.path)
+import os
+  
+# Permite modificar aspectos del entoro de ejecución de Python, como la lista de rutas de búsqueda de módulos (sys.path)
 import sys
-
+  
 # Sube un nivel desde /PEC/
-root_dir = os.path.abspath('..')  
+root_dir = os.path.abspath('..')
 sys.path.append(root_dir)
-
+  
 # Análisis y manipulación de datos
 import pandas as pd
-
-# Estilo tablas
 pd.set_option('display.float_format', '{:.2f}'.format)
 pd.set_option('display.max_columns', None)
   
 # Visualización de datos
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-# Estilo visualizacion
+# Estilo
 sns.set(style="whitegrid")
   
 # Operaciones matematicas y vectorizacion
 import numpy as np
 import random
-  
+
 # Librerias para DL
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import root_mean_squared_error, mean_absolute_error
+from sklearn.metrics import root_mean_squared_error, mean_absolute_error, mean_squared_error
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay, classification_report
   
 # Para guardar modelos y resultados
@@ -71,8 +67,8 @@ import tensorflow as tf
 from tensorflow import keras
 import tensorflow_datasets as tfds
 from tensorflow.keras.preprocessing.text import Tokenizer
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import SimpleRNN, Dense, Input, GRU, LSTM, Dropout, Embedding, Attention, GlobalAveragePooling1D
+from tensorflow.keras.models import Sequential, load_model
+from tensorflow.keras.layers import SimpleRN, Dense, Input, GRU, LSTM, Dropout, Embedding, Attention, GlobalAveragePooling1D
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 from tensorflow.keras import regularizers
@@ -85,14 +81,18 @@ import shutil
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
+  
+# Guardar los modelos entrenados y sus historiales
+import pickle
 ```
+
+# 1. RNN básica
 
 En este ejercicio vamos a explorar cómo una **Red Neuronal Recurrente (RNN)** puede aprender patrones en datos de series temporales. Las RNN son un tipo de red diseñado para manejar secuencias, ya que no procesan los datos como entradas independientes, sino que mantienen un estado interno que les permite recordar información sobre pasos previos. Esto las hace especialmente útiles en tareas como predicción de series temporales, procesamiento de lenguaje natural (NLP) o análisis de señales.
 
 Trabajaremos con una serie temporal para la predicción de la temperatura del aceite de transformadores eléctricos. Más información sobre el dataset: https://github.com/zhouhaoyi/ETDataset
 
 En el modelado de series temporales, el parámetro `window_size` es fundamental. Representa el **número de pasos anteriores** que el modelo utilizará como entrada para predecir el siguiente valor. Podemos imaginarlo como una **ventana deslizante** (o sliding window) que se mueve a lo largo de la serie. En cada posición, recoge un bloque de datos pasados y lo utiliza para estimar el valor futuro inmediato. Por ejemplo, si `window_size = 5`, y tenemos la serie `1, 2, 3, 4, 5, 6, 7`, la red recibiría como entrada `[1, 2, 3, 4, 5]` y debería predecir como salida `6`.
-
 
 Por otra parte, la **reproducibilidad** es la capacidad de obtener los **mismos resultados** cuando un experimento se repite bajo las mismas condiciones: mismo código, mismos datos de entrada, mismos hiperparámetros, mismo entorno de ejecución. En deep learning, lograr la reproducibilidad es más difícil por varias razones:
 - Inicialización aleatoria de pesos de la red.
@@ -128,6 +128,127 @@ Responde a las siguientes preguntas:
 - ¿Qué limitaciones tiene una SimpleRNN para datos con secuencias temporales largas?
 </div>
 
+He creado dos funciones que se utilizan a lo largo de la PEC:
+
+- La primera, **`resumen_dataset()`**, genera un resumen completo del DataFrame, mostrando su forma, tipos de datos, valores nulos, y estadísticas básicas, además del rango de fechas.
+- La segunda, **`create_sequences()`**, Convierte un array de datos en secuencias X (ventanas) e y (objetivo).
+
+```python
+def resumen_dataset(df, nombre="Dataset"):
+    '''
+    Imprime un resumen completo del dataset, incluyendo:
+        - Dimensiones
+        - Rango temporal
+        - Tipos de datos
+        - Primeras filas
+        - Estadísticas descriptivas
+        - Valores nulos (con conteo y porcentaje)
+    '''
+    n_filas, n_cols = df.shape
+    fecha_min, fecha_max = df.index.min(), df.index.max()
+  
+    print("="*60)
+    print(f"RESUMEN DEL DATASET: {nombre}")
+    print("="*60)
+  
+    # Información general
+    print("\nINFORMACIÓN GENERAL")
+    print(f"- Dimensiones        : {n_filas:,} filas × {n_cols} columnas")
+    print(f"- Rango temporal     : {fecha_min} -> {fecha_max}")
+  
+    # Tipos de datos
+    print("\n- Tipos de datos:")
+    print(df.dtypes.value_counts())
+  
+    # Primeras filas
+    print("\nPRIMERAS FILAS")
+    print(df.head())
+  
+    # Estadísticas
+    print("\nESTADÍSTICAS DESCRIPTIVAS")
+    print(df.describe())
+  
+    # Nulos
+    nulos = df.isnull().sum()
+    nulos = nulos[nulos > 0]
+  
+    print("\nVALORES NULOS")
+    if len(nulos) == 0:
+        print("No hay valores nulos")
+    else:
+        nulos_pct = (nulos / n_filas * 100).round(2)
+        resumen_nulos = pd.DataFrame({
+            "Nulos": nulos,
+            "%": nulos_pct
+        })
+        print(resumen_nulos)
+  
+    print("="*60)
+
+  
+def create_sequences(data, window_size):
+    """
+    Convierte un array de datos en secuencias X (ventanas) e y (objetivo).
+  
+    Params:
+    - data: Array de datos con forma [muestras, features]
+    - window_size: Número de pasos de tiempo a incluir en cada secuencia X
+  
+    Returns:
+    X: Secuencia de 'window_size' pasos con todas las variables.
+        - Tendrá forma [muestras, window_size, features]
+    y: Valor de la variable 'OT' en el paso siguiente.
+        - Tendrá forma [muestras,] (predicción del siguiente valor de 'OT')
+    """
+
+
+    X, y = [], []
+  
+    for i in range(len(data) - window_size):
+        # Tomamos todas las variables en la ventana i : i + window_size
+        X.append(data[i : (i + window_size), :])
+  
+        # El objetivo (target) es la columna 'OT' (última posición) del siguiente paso
+        y.append(data[i + window_size, -1])
+  
+    return np.array(X), np.array(y)
+
+
+def create_sequences_multistep(data, window_size, horizon):
+    """
+
+    """
+  
+    X, y = [], []
+  
+    for i in range(len(data) - window_size - horizon + 1):
+        # Secuencia de entrada (todas las variables)
+        X.append(data[i : (i + window_size), :])
+  
+        # Secuencia de salida: las siguientes 'horizon' horas de la variable 'OT' (índice -1)
+        y.append(data[i + window_size : i + window_size + horizon, -1])
+  
+    return np.array(X), np.array(y)
+
+  
+def evaluate_multistep(model, X, y_scaled):
+    """
+    Función para evaluar multistep desescalando correctamente
+    """
+    y_pred_scaled = model.predict(X, verbose=0)
+  
+    # Desescalar matrices [N, 10] con un scaler de [N, 1]
+    y_pred = target_scaler.inverse_transform(y_pred_scaled.reshape(-1, 1)).reshape(y_pred_scaled.shape)
+    y_real = target_scaler.inverse_transform(y_scaled.reshape(-1, 1)).reshape(y_scaled.shape)
+  
+    # Error promedio por muestra
+    mse = mean_squared_error(y_real, y_pred)
+    rmse = root_mean_squared_error(y_real, y_pred)
+    mae = mean_absolute_error(y_real, y_pred)
+  
+    return mse, rmse, mae, y_real, y_pred
+```
+
 ## 1.1. Carga del *Electricity Transformer Dataset (ETDataset)*
 
 El dataset ETT-small (*Electricity Transformer Temperature*) se enmarca en el problema de la distribución eléctrica, donde uno de los mayores retos es predecir la demanda futura de energía. Esta demanda es altamente variable y depende de múltiples factores como el día de la semana, estaciones del año, condiciones climáticas o eventos puntuales. La falta de modelos precisos de predicción a largo plazo obliga a los gestores a sobredimensionar la capacidad, lo que provoca ineficiencias operativas, desperdicio energético y desgaste innecesario del equipamiento.
@@ -144,25 +265,14 @@ En este contexto, la variable **temperatura del aceite del transformador (OT, *O
 ruta_csv = r'..\Data\ETTh1.csv'
   
 # Cargar el dataset
-data = pd.read_csv(ruta_csv, sep=',', decimal='.', parse_dates=['date'], index_col='date')
+data_raw = pd.read_csv(ruta_csv, sep=',', decimal='.', parse_dates=['date'], index_col='date')
   
 # Primera vista de la distribucion y calidad de los datos
-resumen_dataset(data, nombre="ETTh1")
+resumen_dataset(data_raw, nombre="ETTh1")
 ```
 
-============================================================ RESUMEN DEL DATASET: ETTh1 ============================================================ INFORMACIÓN GENERAL 
-- Dimensiones : 17,420 filas × 7 columnas 
-- Rango temporal : 2016-07-01 00:00:00 → 2018-06-26 19:00:00 
-- Tipos de datos: float64 7 Name: count, dtype: int64 
-
-PRIMERAS FILAS 
-HUFL HULL MUFL MULL LUFL LULL OT date 2016-07-01 00:00:00 5.83 2.01 1.60 0.46 4.20 1.34 30.53 2016-07-01 01:00:00 5.69 2.08 1.49 0.43 4.14 1.37 27.79 2016-07-01 02:00:00 5.16 1.74 1.28 0.35 3.78 1.22 27.79 2016-07-01 03:00:00 5.09 1.94 1.28 0.39 3.81 1.28 25.04 2016-07-01 04:00:00 5.36 1.94 1.49 0.46 3.87 1.28 21.95 
-
-ESTADÍSTICAS DESCRIPTIVAS HUFL HULL MUFL MULL LUFL LULL OT count 17420.00 17420.00 17420.00 17420.00 17420.00 17420.00 17420.00 mean 7.38 2.24 4.30 0.88 3.07 0.86 13.32 std 7.07 2.04 6.83 1.81 1.16 0.60 8.57 min -22.71 -4.76 -25.09 -5.93 -1.19 -1.37 -4.08 25% 5.83 0.74 3.30 -0.28 2.32 0.67 6.96 50% 8.77 2.21 5.97 0.96 2.83 0.98 11.40 75% 11.79 3.68 8.64 2.20 3.62 1.22 18.08 max 23.64 10.11 17.34 7.75 8.50 3.05 46.01 
-
-VALORES NULOS  No hay valores nulos ============================================================
-
-## 1.3. Interpretación inicial del dataset *ETTh1* en contexto energético
+## 1.2. Análisis exploratorio de los datos
+### 1.2.1. Interpretación inicial del dataset *ETTh1* en contexto energético
 
 ### A. Estructura temporal y naturaleza del problema
 
@@ -201,7 +311,7 @@ La presencia de valores extremos en varias variables sugiere la existencia de pi
 
 La variabilidad observada sugiere que la predicción de *OT* es un problema complejo, con posibles relaciones no lineales entre variables. Aunque la ausencia de valores nulos simplifica el preprocesado, la dispersión de los datos hace recomendable aplicar técnicas de normalización para facilitar el entrenamiento de modelos de Deep Learning.
 
-### 1.3.1. Distribución de la variable objetivo (OT)
+### 1.2.2. Distribución de la variable objetivo (OT)
 
 El análisis conjunto de la serie temporal y su distribución permite entender mejor el comportamiento de la temperatura del aceite del transformador (OT). A lo largo del tiempo, la variable muestra un patrón claramente no estacionario, con cambios progresivos en su nivel medio. En los primeros meses del periodo analizado se observan temperaturas elevadas, que posteriormente descienden y dan lugar a una dinámica más estable con oscilaciones moderadas. Este comportamiento sugiere la presencia de una componente estacional relevante, probablemente vinculada a factores externos como las condiciones ambientales o la variabilidad en la demanda energética.
 
@@ -209,10 +319,42 @@ Al observar el detalle a corto plazo, se aprecia que la temperatura no evolucion
 
 Por su parte, la distribución de la variable confirma este comportamiento. La mayor parte de los valores se concentra en un rango intermedio de temperaturas, mientras que los valores más altos aparecen con menor frecuencia, dando lugar a una distribución asimétrica con cola hacia la derecha. Estos valores extremos, aunque poco frecuentes, son especialmente relevantes, ya que pueden estar asociados a situaciones de mayor estrés o carga en el transformador.
 
+```python
+# Variable objetivo: temperatura del aceite del transformador (OT = Oil Temperature)
+target_col = "OT"
+  
+fig, axes = plt.subplots(3, 1, figsize=(14, 10))
+  
+# Serie completa
+axes[0].plot(data_raw[target_col], color="steelblue", linewidth=0.7)
+axes[0].set_title("Serie completa — Oil Temperature (OT)")
+axes[0].set_ylabel("Temperatura (°C)")
+axes[2].set_xlabel("Temperatura (°C)")
+  
+# Zoom en los primeros 500 puntos (≈ 20 días horarios)
+axes[1].plot(data_raw[target_col].iloc[:500], color="darkorange", linewidth=0.9)
+axes[1].set_title("Zoom — primeros 500 registros")
+axes[1].set_ylabel("Temperatura (°C)")
+axes[2].set_xlabel("Temperatura (°C)")
+  
+# Distribución
+axes[2].hist(data_raw[target_col], bins=50, color="slategray", edgecolor="white")
+axes[2].set_title("Distribución de OT")
+axes[2].set_xlabel("Temperatura (°C)")
+axes[1].set_ylabel("Temperatura (°C)")
+axes[2].set_ylabel("Frecuencia")
+  
+plt.tight_layout()
+  
+# Guardar figura
+plt.savefig(r"..\images\TS-hist_OT.png", dpi=300, bbox_inches="tight")
+plt.show()
+```
+
 ![[Pasted image 20260331091009.png]]
 
 
-### 1.3.2. Distribución de las variables descriptivas
+### 1.2.3. Distribución de las variables descriptivas
 
 #### A. Comportamiento temporal de las variables
 
@@ -223,7 +365,7 @@ En particular, variables como HUFL y MUFL presentan una elevada variabilidad con
 Además, se identifican eventos puntuales abruptos (picos y caídas), que podrían corresponder a situaciones operativas específicas o anomalías en la demanda. Estos eventos son relevantes, ya que pueden influir directamente en la temperatura del transformador.
 ```python
 # Variables descriptivas (excluyendo la variable objetivo)
-features = data.drop(columns=["OT"])
+features = data_raw.drop(columns=["OT"])
   
 # SERIES TEMPORALES
 fig, axes = plt.subplots(len(features.columns), 1, figsize=(14, 12), sharex=True)
@@ -276,7 +418,7 @@ plt.show()
 
 ![[Pasted image 20260331091115.png]]
 
-### 1.3.3. Correlación entre variables
+### 1.2.4. Correlación entre variables
 
 Las variables operativas del transformador muestran relaciones coherentes con la naturaleza del sistema eléctrico, destacando **fuertes interdependencias entre variables de carga de un mismo nivel** y **comportamientos más independientes en relación con la temperatura del aceite (OT)**.
 
@@ -292,7 +434,7 @@ En resumen, las variables de carga muestran una **alta redundancia dentro de cad
 
 ```python
 # Matriz de correlación
-correlation_matrix = data.corr()
+correlation_matrix = data_raw.corr()
   
 plt.figure(figsize=(10, 8))
 sns.heatmap(correlation_matrix,
@@ -364,7 +506,7 @@ Dividimos de forma secuencial: 70% entrenamiento, 15% validación y 15% test.
 
 ```python
 # Tamaños de las particiones
-n = len(data)
+n = len(data_raw)
 train_end = int(n * 0.7)
 val_end = int(n * 0.85)
   
@@ -401,11 +543,9 @@ target_scaler.fit(train_df[['OT']])
 
 ### 1.3.3. Función para crear secuencias (Sliding Window)
 
-Esta función recorrerá los datos usando una ventana deslizante. Si `window_size = 24` (un día completo en datos horarios), usaremos las filas de la 0 a la 23 para predecir el valor de la fila 24.
+Esta función (`create_sequences()`) recorrerá los datos usando una ventana deslizante. Es decir, si `window_size = 24` (un día completo en datos horarios), usaremos las filas de la 0 a la 23 para predecir el valor de la fila 24.
 
-En mi caso voy a definir distintos tamaños de ventana a probar de 1 dia, 2 dias y 1 semana.
-
-> Para garantizar que los resultados sean consistentes cada vez que se ejecute la celda, invocamos las semillas antes de la creación del modelo.
+En mi caso voy a definir distintos tamaños de ventana a probar de 24h (1 día), 48h (2 días) y 168h (1 semana).
 
 ```python
 # Tamaños de ventana a probar
@@ -456,50 +596,76 @@ Si se desglosa el cálculo, se entiende mejor.
 * A esto se añade la capa densa final, que conecta las 64 salidas de la RNN con una única neurona, aportando 65 parámetros adicionales. 
 * El resultado total es, por tanto, 4.673 parámetros, idéntico en todos los modelos al no depender del tamaño de la ventana temporal.
 
+```python
+# Hiperparámetros
+SEED = 42
+UNITS = 64 # número de neuronas. Si el modelo sobreentrena lo bajo a 32 o añado una capa de Dropout(0.2)
+BATCH = 64  # catidad de datos para actualizar el modelo. Si el entrenamiento va muy lento lo subo
+EPOCHS = 200 # pasadas completas por todos los datos de entrenamiento
+PATIENCE = 10 # Si se queda en un mínimo local lo subo
+N_FEATURES = train_scaled.shape[1] # En este caso, 7 variables
+  
+# Callback
+# Si la val_loss no mejora en 10 épocas, para y recupera el mejor peso
+early_stop = EarlyStopping(monitor="val_loss", patience=PATIENCE, restore_best_weights=True)
+```
 
 ```python
-SEED = 42
-
+# --- CONFIGURACIÓN DE PERSISTENCIA ---
+save_dir = r"../SimpleRNN"
+if not os.path.exists(save_dir):
+    os.makedirs(save_dir)
+  
 # Guardar modelos e historiales de entrenamiento
 trained_models = {}
 trained_histories = {}
-
-# En este caso, 7 variables
-n_features = train_scaled.shape[1]
-
+  
 # Bucle de Entrenamiento y Evaluación
 for ws in WINDOW_SIZES:
     print(f"\n{'='*60}")
     print(f" CONFIGURANDO MODELO PARA WINDOW_SIZE = {ws}")
     print(f"{'='*60}")
-
+    
     # Resetear semillas para reproducibilidad
     np.random.seed(SEED); random.seed(SEED); tf.random.set_seed(SEED)
-
+  
 # --- Definición del Modelo SimpleRNN ---
     model = Sequential([
-        Input(shape=(ws, n_features)),
-        SimpleRNN(64, activation="tanh"), # 64 unidades para capturar patrones complejos
-        Dense(1) # Salida única: la temperatura OT
+        Input(shape=(ws, N_FEATURES)),
+        SimpleRNN(UNITS, activation="tanh"),
+        Dense(1) # la temperatura OT
     ])
-    model.compile(optimizer="adam", loss="mean_squared_error")
   
+    model.compile(optimizer="adam", loss="mean_squared_error")
+
+
     # Mostrar arquitectura
     print(f"\nResumen del modelo (ws={ws}):")
     model.summary()
-  
+
+
 # --- Entrenamiento con EarlyStopping ---
     # Si la val_loss no mejora en 5 épocas, para y recupera el mejor peso
-    early_stop = EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
-  
+    early_stop = EarlyStopping(monitor="val_loss", patience=PATIENCE, restore_best_weights=True)
     history = model.fit(
             all_sequences[ws]['X_train'], all_sequences[ws]['y_train'],
             validation_data=(all_sequences[ws]['X_val'], all_sequences[ws]['y_val']),
-            epochs=30,
-            batch_size=64,
+            epochs=EPOCHS,
+            batch_size=BATCH,
             callbacks=[early_stop],
             verbose=1
         )
+
+    # --- GUARDADO DISRUPTIVO ---
+    # 1. Guardar el modelo en formato nativo de Keras
+    model_filename = f"{save_dir}/modelo_rnn_ws_{ws}.keras"
+    model.save(model_filename)
+    
+    # 2. Guardar el historial (history.history es un dict) para no perder las gráficas
+    history_filename = f"{save_dir}/historia_ws_{ws}.pkl"
+    with open(history_filename, 'wb') as f:
+        pickle.dump(history.history, f)
+    print(f"\nModelo y historial guardados para ws={ws} en {save_dir}/")  
     # Guardamos los objetos para los siguientes lotes
     trained_models[ws] = model
     trained_histories[ws] = history
@@ -519,6 +685,8 @@ Model: "sequential_4"
  Trainable params: 4,673 (18.25 KB)
  Non-trainable params: 0 (0.00 B)
 
+Epoch 1/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 5ms/step - loss: 0.0059 - val_loss: 5.9672e-04 Epoch 2/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 4ms/step - loss: 9.5527e-04 - val_loss: 3.4489e-04 Epoch 3/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 8.0963e-04 - val_loss: 3.0651e-04 Epoch 4/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 7.6111e-04 - val_loss: 2.5464e-04 Epoch 5/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 4ms/step - loss: 6.8163e-04 - val_loss: 2.2397e-04 Epoch 6/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 6.2448e-04 - val_loss: 2.0747e-04 Epoch 7/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 5.8225e-04 - val_loss: 2.0099e-04 Epoch 8/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 5.5121e-04 - val_loss: 1.9208e-04 Epoch 9/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 5.2933e-04 - val_loss: 1.7947e-04 Epoch 10/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 5.1414e-04 - val_loss: 1.7673e-04 Epoch 11/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 5.0313e-04 - val_loss: 1.8093e-04 Epoch 12/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.9476e-04 - val_loss: 1.8567e-04 Epoch 13/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.8804e-04 - val_loss: 1.8757e-04 Epoch 14/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.8237e-04 - val_loss: 1.8647e-04 Epoch 15/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.7749e-04 - val_loss: 1.8336e-04 Epoch 16/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.7329e-04 - val_loss: 1.7907e-04 Epoch 17/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.6967e-04 - val_loss: 1.7415e-04 Epoch 18/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.6657e-04 - val_loss: 1.6891e-04 Epoch 19/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.6388e-04 - val_loss: 1.6367e-04 Epoch 20/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.6147e-04 - val_loss: 1.5883e-04 Epoch 21/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 4ms/step - loss: 4.5917e-04 - val_loss: 1.5490e-04 Epoch 22/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.5685e-04 - val_loss: 1.5228e-04 Epoch 23/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.5450e-04 - val_loss: 1.5094e-04 Epoch 24/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.5220e-04 - val_loss: 1.5036e-04 Epoch 25/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.5008e-04 - val_loss: 1.4967e-04 Epoch 26/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.4840e-04 - val_loss: 1.4800e-04 Epoch 27/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.4757e-04 - val_loss: 1.4524e-04 Epoch 28/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.4828e-04 - val_loss: 1.4313e-04 Epoch 29/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.5100e-04 - val_loss: 1.4632e-04 Epoch 30/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.5294e-04 - val_loss: 1.7889e-04 Epoch 31/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.4806e-04 - val_loss: 2.2232e-04 Epoch 32/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.4146e-04 - val_loss: 2.2844e-04 Epoch 33/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 4ms/step - loss: 4.3767e-04 - val_loss: 2.2432e-04 Epoch 34/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.3511e-04 - val_loss: 2.1858e-04 Epoch 35/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.3299e-04 - val_loss: 2.1268e-04 Epoch 36/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.3107e-04 - val_loss: 2.0711e-04 Epoch 37/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.2927e-04 - val_loss: 2.0216e-04 Epoch 38/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 3ms/step - loss: 4.2756e-04 - val_loss: 1.9806e-04 Modelo y historial guardados para ws=24 en ..\SimpleRNN/ 
+
 ============================================================ CONFIGURANDO MODELO PARA WINDOW_SIZE = 48 ============================================================ Resumen del modelo (ws=48):
 Model: "sequential_5"
 
@@ -532,7 +700,9 @@ Model: "sequential_5"
  Total params: 4,673 (18.25 KB)
  Trainable params: 4,673 (18.25 KB)
  Non-trainable params: 0 (0.00 B)
- 
+
+Epoch 1/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 2s 7ms/step - loss: 0.0059 - val_loss: 6.3663e-04 Epoch 2/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 9.0940e-04 - val_loss: 3.2464e-04 Epoch 3/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 8.0614e-04 - val_loss: 2.7068e-04 Epoch 4/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 7.5022e-04 - val_loss: 2.3955e-04 Epoch 5/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 6.8637e-04 - val_loss: 2.2428e-04 Epoch 6/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 6.3806e-04 - val_loss: 2.1657e-04 Epoch 7/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 6.0153e-04 - val_loss: 2.1287e-04 Epoch 8/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 5.7342e-04 - val_loss: 2.1147e-04 Epoch 9/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 5.5150e-04 - val_loss: 2.1145e-04 Epoch 10/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 5.3428e-04 - val_loss: 2.1226e-04 Epoch 11/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 5.2066e-04 - val_loss: 2.1357e-04 Epoch 12/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 5.0977e-04 - val_loss: 2.1520e-04 Epoch 13/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 5.0093e-04 - val_loss: 2.1700e-04 Epoch 14/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 7ms/step - loss: 4.9366e-04 - val_loss: 2.1887e-04 Epoch 15/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 4.8758e-04 - val_loss: 2.2065e-04 Epoch 16/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 7ms/step - loss: 4.8244e-04 - val_loss: 2.2227e-04 Epoch 17/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 4.7806e-04 - val_loss: 2.2369e-04 Epoch 18/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 4.7429e-04 - val_loss: 2.2493e-04 Epoch 19/200 190/190 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 4.7101e-04 - val_loss: 2.2609e-04 Modelo y historial guardados para ws=48 en ..\SimpleRNN/ 
+
 ============================================================ CONFIGURANDO MODELO PARA WINDOW_SIZE = 168 ============================================================ Resumen del modelo (ws=168):
 Model: "sequential_6"
 
@@ -547,15 +717,20 @@ Model: "sequential_6"
  Trainable params: 4,673 (18.25 KB)
  Non-trainable params: 0 (0.00 B)
 
-## 1.5. Cálculo de Métricas (RMSE y MAE)
+Epoch 1/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 4s 17ms/step - loss: 0.0059 - val_loss: 4.8463e-04 Epoch 2/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 9.0751e-04 - val_loss: 3.4651e-04 Epoch 3/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 7.6312e-04 - val_loss: 2.8592e-04 Epoch 4/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 6.9113e-04 - val_loss: 2.4577e-04 Epoch 5/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 6.1580e-04 - val_loss: 2.3357e-04 Epoch 6/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 5.8101e-04 - val_loss: 2.6440e-04 Epoch 7/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 5.5851e-04 - val_loss: 2.7217e-04 Epoch 8/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 5.3688e-04 - val_loss: 2.7003e-04 Epoch 9/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 5.1857e-04 - val_loss: 2.6437e-04 Epoch 10/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 5.0353e-04 - val_loss: 2.5767e-04 Epoch 11/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 4.9132e-04 - val_loss: 2.5073e-04 Epoch 12/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.8150e-04 - val_loss: 2.4361e-04 Epoch 13/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 4.7363e-04 - val_loss: 2.3609e-04 Epoch 14/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.6730e-04 - val_loss: 2.2793e-04 Epoch 15/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.6214e-04 - val_loss: 2.1888e-04 Epoch 16/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.5791e-04 - val_loss: 2.0889e-04 Epoch 17/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.5440e-04 - val_loss: 1.9807e-04 Epoch 18/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.5146e-04 - val_loss: 1.8689e-04 Epoch 19/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 4.4892e-04 - val_loss: 1.7613e-04 Epoch 20/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.4660e-04 - val_loss: 1.6685e-04 Epoch 21/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.4433e-04 - val_loss: 1.5990e-04 Epoch 22/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.4198e-04 - val_loss: 1.5539e-04 Epoch 23/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.3955e-04 - val_loss: 1.5285e-04 Epoch 24/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.3709e-04 - val_loss: 1.5156e-04 Epoch 25/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.3463e-04 - val_loss: 1.5100e-04 Epoch 26/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 4.3221e-04 - val_loss: 1.5089e-04 Epoch 27/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.2982e-04 - val_loss: 1.5106e-04 Epoch 28/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.2746e-04 - val_loss: 1.5144e-04 Epoch 29/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.2514e-04 - val_loss: 1.5192e-04 Epoch 30/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.2287e-04 - val_loss: 1.5240e-04 Epoch 31/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 4.2069e-04 - val_loss: 1.5279e-04 Epoch 32/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 16ms/step - loss: 4.1864e-04 - val_loss: 1.5304e-04 Epoch 33/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.1681e-04 - val_loss: 1.5323e-04 Epoch 34/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.1618e-04 - val_loss: 1.5336e-04 Epoch 35/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.1417e-04 - val_loss: 1.5473e-04 Epoch 36/200 188/188 ━━━━━━━━━━━━━━━━━━━━ 3s 15ms/step - loss: 4.1125e-04 - val_loss: 1.5902e-04 Modelo y historial guardados para ws=168 en ..\SimpleRNN/
+## 1.5. Análisis de Resultados y Comportamiento del Modelo
 
-Para evaluar el rendimiento del modelo, se calcularon las métricas de error (RMSE y MAE) en los tres subconjuntos (entrenamiento, validación y test) aplicando previamente la transformación inversa del `target_scaler` para expresar los resultados en grados Celsius, lo que facilita su interpretación directa.
+El análisis de las métricas consolidadas confirma que **la ventana de 24 horas constituye una de las configuraciones óptimas para este problema**, proporcionando un excelente equilibrio entre precisión y capacidad de generalización. Con este horizonte temporal, el modelo alcanza en el conjunto de test un **MSE de 0.43**, un **RMSE de 0.66** y un **MAE de 0.46**, lo que indica que la red es capaz de capturar los patrones térmicos diarios con un error inferior a medio grado Celsius. Además, en validación se obtienen los mejores resultados globales (**RMSE de 0.60 y MAE de 0.44**), lo que refuerza la robustez de esta configuración.
 
-El análisis de los resultados muestra con bastante claridad que la **ventana de 24 horas es la más adecuada**. Este modelo, que utiliza un horizonte temporal equivalente a un día, es el que mejor equilibra ajuste y capacidad de generalización, obteniendo los errores más bajos especialmente en validación y test.
+No obstante, resulta especialmente relevante observar que la ventana de **168 horas presenta un rendimiento prácticamente equivalente**, e incluso ligeramente superior en el conjunto de test (**MSE de 0.42, RMSE de 0.65 y MAE de 0.45**). Sin embargo, esta mejora es marginal frente al incremento significativo en la longitud de la secuencia de entrada, lo que sugiere que, aunque el modelo es capaz de manejar información de más largo plazo, **el grueso de la capacidad predictiva sigue concentrándose en el corto plazo (24 horas)**.
 
-A medida que se amplía la ventana temporal a 48 y, sobre todo, a 168 horas, el rendimiento empeora de forma progresiva. Este comportamiento sugiere que la arquitectura SimpleRNN tiene dificultades para manejar dependencias largas, perdiendo eficacia cuando la secuencia de entrada crece demasiado.
+Por el contrario, la ventana de **48 horas muestra un deterioro claro del rendimiento**, con un **RMSE de 0.76 y un MAE de 0.54 en test**, así como peores resultados en validación (**RMSE de 0.73 y MAE de 0.56**). Este comportamiento sugiere la existencia de una franja intermedia en la que la información adicional no solo no aporta valor, sino que introduce ruido o patrones menos consistentes que dificultan el aprendizaje del modelo.
 
-Un aspecto llamativo aparece al comparar los errores entre conjuntos: el RMSE en entrenamiento (1.04) es superior al de test (0.69) en la mejor configuración. Aunque no es lo habitual, este fenómeno puede darse en series temporales cuando el tramo final de los datos (utilizado como test) presenta un comportamiento más estable o menos ruidoso que el inicial, lo que facilita las predicciones.
+En el conjunto de entrenamiento, las diferencias entre configuraciones son menos acusadas, con valores muy similares para 24 y 168 horas (**RMSE de 0.97 y MAE de 0.67** en ambos casos), y un ligero empeoramiento para 48 horas (**RMSE de 1.04 y MAE de 0.74**). Esto indica que el modelo es capaz de ajustarse de forma similar durante el aprendizaje, pero las diferencias emergen principalmente en la capacidad de generalización.
+
+Desde un punto de vista técnico, aunque la ventana de 168 horas no degrada el rendimiento, tampoco aporta mejoras significativas, lo que sugiere que la red no está aprovechando de forma efectiva la información más lejana en el tiempo. En consecuencia, **el modelo basa fundamentalmente sus predicciones en dependencias temporales de corto alcance**.
+
+Finalmente, se mantiene el patrón observado de un mejor rendimiento en test que en entrenamiento para las configuraciones óptimas (**RMSE de 0.66 frente a 0.97 en la ventana de 24 horas**). Esto podría indicar que el conjunto de test presenta una dinámica más estable y menos ruidosa que el conjunto de entrenamiento, permitiendo que el modelo generalice con mayor precisión sobre este tramo de datos.
 
 ```python
 results_list = []
@@ -563,46 +738,55 @@ results_list = []
 for ws in WINDOW_SIZES:
     model = trained_models[ws]
     data = all_sequences[ws]
+  
     # Diccionario para iterar sobre los conjuntos
     subconjuntos = {
         'Entrenamiento': (data['X_train'], data['y_train']),
         'Validación': (data['X_val'], data['y_val']),
         'Test': (data['X_test'], data['y_test'])
     }
-
+  
     for nombre, (X, y_real_scaled) in subconjuntos.items():
         # Predicción
         y_pred_scaled = model.predict(X, verbose=0)
+  
         # Desescalado a valores reales (°C)
         y_pred = target_scaler.inverse_transform(y_pred_scaled)
         y_real = target_scaler.inverse_transform(y_real_scaled.reshape(-1, 1))
+  
         # Cálculo de métricas
         rmse = root_mean_squared_error(y_real, y_pred)
         mae = mean_absolute_error(y_real, y_pred)
+        mse = mean_squared_error(y_real, y_pred)
+  
         results_list.append({
             "Window Size": ws,
             "Conjunto": nombre,
+            "MSE": round(mse, 4),
             "RMSE": round(rmse, 4),
-            "MAE": round(mae, 4)
+            "MAE": round(mae, 4),
+  
         })
   
 # Generación de la tabla comparativa final
-df_resultados = pd.DataFrame(results_list)
-print("\nTABLA COMPARATIVA DE RESULTADOS:")
-print(df_resultados.to_string(index=False))
+df_resultados_Ej1 = pd.DataFrame(results_list)
+print("="*60)
+print("TABLA COMPARATIVA DE RESULTADOS:")
+print("="*60)
+print(df_resultados_Ej1.sort_values(by=['Conjunto', 'RMSE', 'MAE']).to_string(index=False))
+print("="*60)
 ```
 
-TABLA COMPARATIVA DE RESULTADOS: 
-Window Size Conjunto RMSE MAE 
-24 Entrenamiento 1.04 0.73 
-24 Validación 0.67 0.50 
-24 Test 0.69 0.48 
-48 Entrenamiento 1.04 0.74 
-48 Validación 0.73 0.56 
-48 Test 0.76 0.54 
-168 Entrenamiento 1.15 0.85 
-168 Validación 0.77 0.58 
-168 Test 0.89 0.65
+============================================================ TABLA COMPARATIVA DE RESULTADOS: ============================================================ Window Size Conjunto MSE RMSE MAE 
+168 Entrenamiento 0.94 0.97 0.67 
+24 Entrenamiento 0.95 0.97 0.67 
+48 Entrenamiento 1.09 1.04 0.74 
+168 Test 0.42 0.65 0.45 
+24 Test 0.43 0.66 0.46 
+48 Test 0.57 0.76 0.54
+24 Validación 0.36 0.60 0.44 
+168 Validación 0.38 0.62 0.45 
+48 Validación 0.53 0.73 0.56 ============================================================
 
 ## 1.6. Visualización de Loss y Predicciones
 
@@ -759,21 +943,15 @@ Para mitigar esto, se desarrollaron arquitecturas más complejas como **LSTM (Lo
 
 ## 2.1. Modelos Recurrentes Avanzados (LSTM y GRU)
 
-Como se ha comentado en el apartado de Solución del ejercicio 1, las redes LSTM y GRU fueron diseñadas para solucionar el problema del desvanecimiento del gradiente que observamos en la SimpleRNN. Utilizan mecanismos de 'puertas' para decidir qué información fluye a través del tiempo, permitiendo capturar dependencias mucho más largas y complejas.
+Las redes LSTM y GRU fueron diseñadas para solucionar el problema del desvanecimiento del gradiente que observamos en la SimpleRNN. Utilizan mecanismos de 'puertas' para decidir qué información fluye a través del tiempo, permitiendo capturar dependencias mucho más largas y complejas.
 
 ### 2.1.1. Configuración de Callbacks y Parámetros
 
-En este apartado además de ustilizar `EarlyStopping`, añadimos `ReduceLROnPlateau`, que actuará como un 'acelerador inteligente', reduciendo la tasa de aprendizaje si el modelo deja de mejorar para intentar encontrar un mínimo global más preciso.
-
+En este apartado además de utilizar `EarlyStopping`, añadimos `ReduceLROnPlateau`, que actuará como un 'acelerador inteligente', reduciendo la tasa de aprendizaje si el modelo deja de mejorar para intentar encontrar un mínimo global más preciso.
 ```python
 # Parámetros heredados del Ejercicio 1
 WS_BEST = 24  # Usamos la mejor ventana del ejercicio anterior
-
-# Definición de Callbacks
-early_stop = EarlyStopping(monitor="val_loss", patience=PATIENCE, restore_best_weights=True)
-
-reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-5, verbose=1)
-
+  
 # Recuperamos los datos del diccionario all_sequences
 X_train_2 = all_sequences[WS_BEST]['X_train']
 y_train_2 = all_sequences[WS_BEST]['y_train']
@@ -785,7 +963,6 @@ y_test_2  = all_sequences[WS_BEST]['y_test']
 
 ## 2.2. Definición y Construcción de Modelos LSTM y GRU
  
-
 El bucle de entrenamiento para los modelos avanzados sigue una estructura similar a la utilizada en el primer ejercicio, garantizando que ambos se evalúen bajo las mismas condiciones (mismo tamaño de ventana de 24 horas y mismas semillas aleatorias). Sin embargo, al observar los resúmenes (`model.summary()`) de las nuevas arquitecturas, la diferencia de complejidad estructural frente a la SimpleRNN se hace evidente de inmediato.
 
 El número de parámetros entrenables experimenta un aumento drástico, reflejando el complejo mecanismo interno que utilizan estas redes para combatir el desvanecimiento del gradiente:
@@ -799,35 +976,38 @@ El número de parámetros entrenables experimenta un aumento drástico, reflejan
 Finalmente, el comportamiento dinámico del entrenamiento también ha cambiado. Los registros muestran cómo el *callback* `ReduceLROnPlateau` intervino repetidas veces en ambos modelos, reduciendo el *learning rate* a la mitad (hasta llegar a órdenes de magnitud de $10^{-5}$) al detectar estancamientos en el error de validación, permitiendo un ajuste fino ("*fine-tuning*") que el optimizador Adam por defecto no habría logrado por sí solo.
 
 ```python
-# (Asegúrate de tener montado Drive como hicimos antes)
-save_dir_adv = "/content/drive/MyDrive/Deep-learning/Módulo 3 - Redes neuronales recurrentes (RNN)/LSTM_y_GRU"
+# configuración de persistencia para los nuevos modelos
+save_dir_adv = "../LSTM_y_GRU"
 if not os.path.exists(save_dir_adv):
     os.makedirs(save_dir_adv)
-  
+
 model_types = ['LSTM', 'GRU']
 trained_models_adv = {}
 trained_histories_adv = {}
 
 for m_type in model_types:
     print(f"\n{'='*60}\n ENTRENANDO MODELO: {m_type}\n{'='*60}")
-  
+    
     # Semillas para reproducibilidad
     np.random.seed(SEED); random.seed(SEED); tf.random.set_seed(SEED)
-  
+    
     # Definición de arquitectura según el tipo
     model = Sequential()
     model.add(Input(shape=(WS_BEST, N_FEATURES)))
-  
     if m_type == 'LSTM':
         model.add(LSTM(UNITS, activation="tanh"))
     else:
         model.add(GRU(UNITS, activation="tanh"))
-  
     model.add(Dropout(0.2)) # Capa para prevenir overfitting
     model.add(Dense(1))
-  
     model.compile(optimizer="adam", loss="mean_squared_error")
     model.summary()
+  
+# --- Entrenamiento con Callbacks ---
+    # Si la val_loss no mejora en 5 épocas, para y recupera el mejor peso
+    # Definición de Callbacks
+    early_stop = EarlyStopping(monitor="val_loss", patience=PATIENCE, restore_best_weights=True)
+    reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=3, min_lr=1e-5, verbose=1)
   
     # Entrenamiento
     history = model.fit(
@@ -838,8 +1018,10 @@ for m_type in model_types:
         callbacks=[early_stop, reduce_lr],
         verbose=1
     )
+    trained_models_adv[m_type] = model
+    trained_histories_adv[m_type] = history
   
-    # --- GUARDADO DISRUPTIVO ---
+     # --- GUARDADO DISRUPTIVO ---
     model_filename = f"{save_dir_adv}/modelo_{m_type}_ws_{WS_BEST}.keras"
     model.save(model_filename)
   
@@ -851,12 +1033,9 @@ for m_type in model_types:
     trained_histories_adv[m_type] = history
 ```
 
-  
-============================================================
- ENTRENANDO MODELO: LSTM
-============================================================
+============================================================ ENTRENANDO MODELO: LSTM ============================================================
 
-Model: "sequential_3"
+Model: "sequential_16"
 
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
 ┃ Layer (type)                    ┃ Output Shape           ┃       Param # ┃
@@ -865,73 +1044,18 @@ Model: "sequential_3"
 ├─────────────────────────────────┼────────────────────────┼───────────────┤
 │ dropout (Dropout)               │ (None, 64)             │             0 │
 ├─────────────────────────────────┼────────────────────────┼───────────────┤
-│ dense_3 (Dense)                 │ (None, 1)              │            65 │
+│ dense_15 (Dense)                │ (None, 1)              │            65 │
 └─────────────────────────────────┴────────────────────────┴───────────────┘
 
  Total params: 18,497 (72.25 KB)
-
  Trainable params: 18,497 (72.25 KB)
-
  Non-trainable params: 0 (0.00 B)
 
-Epoch 1/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 6s 13ms/step - loss: 0.0049 - val_loss: 6.1717e-04 - learning_rate: 0.0010
-Epoch 2/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0021 - val_loss: 4.8428e-04 - learning_rate: 0.0010
-Epoch 3/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0018 - val_loss: 3.5835e-04 - learning_rate: 0.0010
-Epoch 4/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0016 - val_loss: 3.3052e-04 - learning_rate: 0.0010
-Epoch 5/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0015 - val_loss: 3.2143e-04 - learning_rate: 0.0010
-Epoch 6/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0013 - val_loss: 2.3125e-04 - learning_rate: 0.0010
-Epoch 7/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0012 - val_loss: 3.4526e-04 - learning_rate: 0.0010
-Epoch 8/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0011 - val_loss: 3.1629e-04 - learning_rate: 0.0010
-Epoch 9/200
-185/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0011
-Epoch 9: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0011 - val_loss: 2.8033e-04 - learning_rate: 0.0010
-Epoch 10/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 9.9663e-04 - val_loss: 2.1662e-04 - learning_rate: 5.0000e-04
-Epoch 11/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 9.6580e-04 - val_loss: 1.9780e-04 - learning_rate: 5.0000e-04
-Epoch 12/200
-184/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0010
-Epoch 12: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 9.5168e-04 - val_loss: 2.0860e-04 - learning_rate: 5.0000e-04
-Epoch 13/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.7827e-04 - val_loss: 2.0341e-04 - learning_rate: 2.5000e-04
-Epoch 14/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.7595e-04 - val_loss: 2.4720e-04 - learning_rate: 2.5000e-04
-Epoch 15/200
-184/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 8.9442e-04
-Epoch 15: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.6746e-04 - val_loss: 2.0563e-04 - learning_rate: 2.5000e-04
-Epoch 16/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.5889e-04 - val_loss: 2.1548e-04 - learning_rate: 1.2500e-04
-Epoch 17/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.3473e-04 - val_loss: 2.1434e-04 - learning_rate: 1.2500e-04
-Epoch 18/200
-187/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 8.6682e-04
-Epoch 18: ReduceLROnPlateau reducing learning rate to 6.25000029685907e-05.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.4741e-04 - val_loss: 2.1766e-04 - learning_rate: 1.2500e-04
-Epoch 19/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.3432e-04 - val_loss: 2.1871e-04 - learning_rate: 6.2500e-05
-Epoch 20/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.1205e-04 - val_loss: 2.1643e-04 - learning_rate: 6.2500e-05
-Epoch 21/200
-188/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 8.2069e-04
-Epoch 21: ReduceLROnPlateau reducing learning rate to 3.125000148429535e-05.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 8.1887e-04 - val_loss: 2.2688e-04 - learning_rate: 6.2500e-05
+Epoch 1/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 3s 9ms/step - loss: 0.0049 - val_loss: 6.1717e-04 - learning_rate: 0.0010 Epoch 2/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 7ms/step - loss: 0.0021 - val_loss: 4.8428e-04 - learning_rate: 0.0010 Epoch 3/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 7ms/step - loss: 0.0018 - val_loss: 3.5835e-04 - learning_rate: 0.0010 Epoch 4/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 7ms/step - loss: 0.0016 - val_loss: 3.3052e-04 - learning_rate: 0.0010 Epoch 5/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 7ms/step - loss: 0.0015 - val_loss: 3.2143e-04 - learning_rate: 0.0010 Epoch 6/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 10ms/step - loss: 0.0013 - val_loss: 2.3125e-04 - learning_rate: 0.0010 Epoch 7/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0012 - val_loss: 3.4525e-04 - learning_rate: 0.0010 Epoch 8/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 8ms/step - loss: 0.0011 - val_loss: 3.1629e-04 - learning_rate: 0.0010 Epoch 9/200 184/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0011 Epoch 9: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257. 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 8ms/step - loss: 0.0011 - val_loss: 2.8033e-04 - learning_rate: 0.0010 Epoch 10/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 9.9663e-04 - val_loss: 2.1662e-04 - learning_rate: 5.0000e-04 Epoch 11/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 9.6580e-04 - val_loss: 1.9780e-04 - learning_rate: 5.0000e-04 Epoch 12/200 186/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0010 Epoch 12: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628. 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 9.5168e-04 - val_loss: 2.0860e-04 - learning_rate: 5.0000e-04 Epoch 13/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.7827e-04 - val_loss: 2.0341e-04 - learning_rate: 2.5000e-04 Epoch 14/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.7595e-04 - val_loss: 2.4720e-04 - learning_rate: 2.5000e-04 Epoch 15/200 184/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 8.9442e-04 Epoch 15: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814. 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.6746e-04 - val_loss: 2.0563e-04 - learning_rate: 2.5000e-04 Epoch 16/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.5889e-04 - val_loss: 2.1548e-04 - learning_rate: 1.2500e-04 Epoch 17/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.3473e-04 - val_loss: 2.1434e-04 - learning_rate: 1.2500e-04 Epoch 18/200 189/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 8.6663e-04 Epoch 18: ReduceLROnPlateau reducing learning rate to 6.25000029685907e-05. 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 8ms/step - loss: 8.4741e-04 - val_loss: 2.1766e-04 - learning_rate: 1.2500e-04 Epoch 19/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.3432e-04 - val_loss: 2.1871e-04 - learning_rate: 6.2500e-05 Epoch 20/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 8.1205e-04 - val_loss: 2.1643e-04 - learning_rate: 6.2500e-05 Epoch 21/200 186/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 8.2072e-04 Epoch 21: ReduceLROnPlateau reducing learning rate to 3.125000148429535e-05. 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 7ms/step - loss: 8.1887e-04 - val_loss: 2.2688e-04 - learning_rate: 6.2500e-05
 
-============================================================
- ENTRENANDO MODELO: GRU
-============================================================
+============================================================ ENTRENANDO MODELO: GRU ============================================================
 
-Model: "sequential_4"
+Model: "sequential_17"
 
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
 ┃ Layer (type)                    ┃ Output Shape           ┃       Param # ┃
@@ -940,71 +1064,23 @@ Model: "sequential_4"
 ├─────────────────────────────────┼────────────────────────┼───────────────┤
 │ dropout_1 (Dropout)             │ (None, 64)             │             0 │
 ├─────────────────────────────────┼────────────────────────┼───────────────┤
-│ dense_4 (Dense)                 │ (None, 1)              │            65 │
+│ dense_16 (Dense)                │ (None, 1)              │            65 │
 └─────────────────────────────────┴────────────────────────┴───────────────┘
 
  Total params: 14,081 (55.00 KB)
-
  Trainable params: 14,081 (55.00 KB)
-
  Non-trainable params: 0 (0.00 B)
 
-Epoch 1/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 3s 10ms/step - loss: 0.0082 - val_loss: 2.9008e-04 - learning_rate: 0.0010
-Epoch 2/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0021 - val_loss: 5.2424e-04 - learning_rate: 0.0010
-Epoch 3/200
-183/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0018
-Epoch 3: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0017 - val_loss: 3.1573e-04 - learning_rate: 0.0010
-Epoch 4/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0015 - val_loss: 2.6756e-04 - learning_rate: 5.0000e-04
-Epoch 5/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0015 - val_loss: 1.7422e-04 - learning_rate: 5.0000e-04
-Epoch 6/200
-181/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0014
-Epoch 6: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0014 - val_loss: 1.7428e-04 - learning_rate: 5.0000e-04
-Epoch 7/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0013 - val_loss: 1.8974e-04 - learning_rate: 2.5000e-04
-Epoch 8/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 5ms/step - loss: 0.0013 - val_loss: 1.7646e-04 - learning_rate: 2.5000e-04
-Epoch 9/200
-188/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0013
-Epoch 9: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0013 - val_loss: 2.3841e-04 - learning_rate: 2.5000e-04
-Epoch 10/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0012 - val_loss: 1.8141e-04 - learning_rate: 1.2500e-04
-Epoch 11/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0012 - val_loss: 1.7555e-04 - learning_rate: 1.2500e-04
-Epoch 12/200
-185/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0012
-Epoch 12: ReduceLROnPlateau reducing learning rate to 6.25000029685907e-05.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0012 - val_loss: 2.0563e-04 - learning_rate: 1.2500e-04
-Epoch 13/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 8ms/step - loss: 0.0011 - val_loss: 2.1657e-04 - learning_rate: 6.2500e-05
-Epoch 14/200
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0011 - val_loss: 1.7881e-04 - learning_rate: 6.2500e-05
-Epoch 15/200
-188/191 ━━━━━━━━━━━━━━━━━━━━ 0s 5ms/step - loss: 0.0011
-Epoch 15: ReduceLROnPlateau reducing learning rate to 3.125000148429535e-05.
-191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 6ms/step - loss: 0.0011 - val_loss: 1.7549e-04 - learning_rate: 6.2500e-05
+Epoch 1/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 3s 9ms/step - loss: 0.0082 - val_loss: 2.9008e-04 - learning_rate: 0.0010 Epoch 2/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0021 - val_loss: 5.2424e-04 - learning_rate: 0.0010 Epoch 3/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 9ms/step - loss: 0.0017 - val_loss: 3.1573e-04 - learning_rate: 0.0010 Epoch 4/200 189/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0016 Epoch 4: ReduceLROnPlateau reducing learning rate to 0.0005000000237487257. 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0015 - val_loss: 2.7639e-04 - learning_rate: 0.0010 Epoch 5/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0014 - val_loss: 1.7083e-04 - learning_rate: 5.0000e-04 Epoch 6/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0013 - val_loss: 1.6985e-04 - learning_rate: 5.0000e-04 Epoch 7/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 1s 8ms/step - loss: 0.0013 - val_loss: 2.1131e-04 - learning_rate: 5.0000e-04 Epoch 8/200 184/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0012 Epoch 8: ReduceLROnPlateau reducing learning rate to 0.0002500000118743628. 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0012 - val_loss: 1.6893e-04 - learning_rate: 5.0000e-04 Epoch 9/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 9ms/step - loss: 0.0012 - val_loss: 2.3436e-04 - learning_rate: 2.5000e-04 Epoch 10/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0011 - val_loss: 1.6619e-04 - learning_rate: 2.5000e-04 Epoch 11/200 188/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0011 Epoch 11: ReduceLROnPlateau reducing learning rate to 0.0001250000059371814. 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0011 - val_loss: 1.6230e-04 - learning_rate: 2.5000e-04 Epoch 12/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 9ms/step - loss: 0.0011 - val_loss: 1.9912e-04 - learning_rate: 1.2500e-04 Epoch 13/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0010 - val_loss: 2.0166e-04 - learning_rate: 1.2500e-04 Epoch 14/200 190/191 ━━━━━━━━━━━━━━━━━━━━ 0s 8ms/step - loss: 0.0010 Epoch 14: ReduceLROnPlateau reducing learning rate to 6.25000029685907e-05. 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 9ms/step - loss: 0.0010 - val_loss: 1.6844e-04 - learning_rate: 1.2500e-04 Epoch 15/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0010 - val_loss: 1.6965e-04 - learning_rate: 6.2500e-05 Epoch 16/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0010 - val_loss: 2.0280e-04 - learning_rate: 6.2500e-05 Epoch 17/200 185/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0010 Epoch 17: ReduceLROnPlateau reducing learning rate to 3.125000148429535e-05. 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0010 - val_loss: 2.0060e-04 - learning_rate: 6.2500e-05 Epoch 18/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 9ms/step - loss: 0.0010 - val_loss: 1.6353e-04 - learning_rate: 3.1250e-05 Epoch 19/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0010 - val_loss: 1.9550e-04 - learning_rate: 3.1250e-05 Epoch 20/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 0s 7ms/step - loss: 0.0010 Epoch 20: ReduceLROnPlateau reducing learning rate to 1.5625000742147677e-05. 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 8ms/step - loss: 0.0010 - val_loss: 1.7384e-04 - learning_rate: 3.1250e-05 Epoch 21/200 191/191 ━━━━━━━━━━━━━━━━━━━━ 2s 9ms/step - loss: 9.9686e-04 - val_loss: 1.7793e-04 - learning_rate: 1.5625e-05
+
 ## 2.3. Análisis Comparativo: SimpleRNN vs. Modelos Avanzados
 
-Tras consolidar las métricas en la tabla final, los resultados revelan un comportamiento contraintuitivo pero profundamente revelador sobre la naturaleza de las redes neuronales recurrentes en la práctica. Contrario a la expectativa teórica general, **el modelo SimpleRNN con ventana de 24 horas sigue siendo el que mejor rendimiento ofrece**, superando a la arquitectura LSTM y manteniéndose a la par con la GRU.
-
-Este fenómeno no indica un error en el entrenamiento, sino que responde a tres factores arquitectónicos y de regularización clave:
-
-1. **La longitud de la secuencia temporal:** Las arquitecturas LSTM y GRU fueron diseñadas específicamente para resolver el desvanecimiento del gradiente en secuencias largas (dependencias a largo plazo). Sin embargo, al utilizar la mejor configuración del ejercicio anterior ($WS = 24$), el horizonte temporal es lo suficientemente corto como para que la SimpleRNN no sufra pérdida de memoria. En secuencias de 24 pasos, las complejas "puertas" de la LSTM no aportan una ventaja decisiva, añadiendo un coste computacional innecesario.
-
-2. **El impacto de la regularización (Dropout):** Para los modelos avanzados se introdujo una capa de `Dropout(0.2)` que no estaba presente en la SimpleRNN original. Esta técnica previene el *overfitting*, pero también dificulta el aprendizaje inicial. Al observar el RMSE de entrenamiento, la LSTM obtiene un error mayor (1.14) que la SimpleRNN (1.04). Esto sugiere un ligero *underfitting*; la red avanzada, penalizada por el Dropout, habría necesitado más épocas de entrenamiento o un ajuste en la paciencia de los *callbacks* para igualar la capacidad de memorización de la red simple.
-
-3. **Complejidad del modelo vs. Naturaleza de los datos:** La LSTM cuenta con casi 19.000 parámetros frente a los 4.600 de la SimpleRNN. Para el dataset ETTh1 a corto plazo (donde la temperatura futura depende fuertemente de la inercia térmica inmediata), una arquitectura excesivamente parametrizada actúa en su contra. La validación empírica de esto es el rendimiento de la **GRU**: al ser una versión optimizada y más ligera de la LSTM (alrededor de 14.000 parámetros y menos puertas lógicas), logra adaptarse mucho mejor al problema, igualando prácticamente el MAE en test de la SimpleRNN (0.48).
+ESTE APARTADO QUIERO QUE LO RESUELVAS TU TENIENDO EN CUENTA TODA LA PRACTICA QUE LLEVAMOS REALIZADA.
 
 ```python
 # Lista para las nuevas métricas
 adv_results = []
-
+  
 for m_type in model_types:
     model = trained_models_adv[m_type]
   
@@ -1013,7 +1089,7 @@ for m_type in model_types:
         'Validación': (X_val_2, y_val_2),
         'Test': (X_test_2, y_test_2)
     }
-
+  
     for nombre, (X, y_real_scaled) in subconjuntos.items():
         y_pred_scaled = model.predict(X, verbose=0)
         y_pred = target_scaler.inverse_transform(y_pred_scaled)
@@ -1033,26 +1109,35 @@ for m_type in model_types:
         })
   
 # Unimos con los resultados anteriores (filtramos solo los de WS=24 del Ej1 para comparar)
-df_previo = df_resultados[df_resultados['Window Size'] == 24].copy()
-df_previo['Modelo'] = 'SimpleRNN'
-df_final = pd.concat([df_previo, pd.DataFrame(adv_results)], ignore_index=True)
+df_resultados_Ej1_ws24 = df_resultados_Ej1[df_resultados_Ej1['Window Size'] == 24].copy()
+
+df_resultados_Ej1_ws24['Modelo'] = 'SimpleRNN'
+df_resultados_Ej2 = pd.concat([df_resultados_Ej1_ws24, pd.DataFrame(adv_results)], ignore_index=True)
   
-print("\nCOMPARATIVA FINAL DE ARQUITECTURAS (WS=24):")
-print(df_final.sort_values(by=['Conjunto', 'RMSE']).to_string(index=False))
+print("="*60)
+print("COMPARATIVA FINAL DE ARQUITECTURAS (WS=24):")
+print("="*60)
+print(df_resultados_Ej2.sort_values(by=['Conjunto', 'RMSE', 'MAE']).to_string(index=False))
+print("="*60)
+  
+# Guardar en Excel
+ruta_excel = r'../LSTM_y_GRU/df_resultados_Ej2.xlsx'
+  
+with pd.ExcelWriter(ruta_excel, engine='openpyxl', mode='w') as writer:
+    df_resultados_Ej2.to_excel(writer, sheet_name='Comparativa_SimpleRNN-LSTM-GRU', index=False)
 ```
 
   
-COMPARATIVA FINAL DE ARQUITECTURAS (WS=24): 
-Window Size Conjunto MSE RMSE MAE Modelo 
-24 Entrenamiento 1.07 1.04 0.73 SimpleRNN
-24 Entrenamiento 1.18 1.09 0.77 GRU 
+============================================================ COMPARATIVA FINAL DE ARQUITECTURAS (WS=24): ============================================================ Window Size Conjunto MSE RMSE MAE Modelo 
+24 Entrenamiento 0.95 0.97 0.67 SimpleRNN 
+24 Entrenamiento 1.11 1.05 0.75 GRU 
 24 Entrenamiento 1.29 1.14 0.82 LSTM 
-24 Test 0.48 0.69 0.48 SimpleRNN 
-24 Test 0.49 0.70 0.48 GRU 
-24 Test 0.61 0.78 0.58 LSTM
-24 Validación 0.44 0.66 0.49 GRU 
-24 Validación 0.44 0.67 0.50 SimpleRNN
-24 Validación 0.50 0.70 0.53 LSTM
+24 Test 0.43 0.66 0.46 SimpleRNN 
+24 Test 0.47 0.68 0.49 GRU 
+24 Test 0.61 0.78 0.58 LSTM 
+24 Validación 0.36 0.60 0.44 SimpleRNN 
+24 Validación 0.41 0.64 0.48 GRU 
+24 Validación 0.50 0.70 0.53 LSTM ============================================================
 ## 2.5. Visualización de Loss y Predicciones (LSTM y GRU)
 
 Al igual que en el análisis de la arquitectura simple, evaluamos el comportamiento de los modelos avanzados a través de sus curvas de aprendizaje y la representación visual de sus predicciones frente a los datos reales.
@@ -1085,7 +1170,6 @@ for m_type in model_types:
     plt.legend(); plt.grid(alpha=0.3)
     plt.tight_layout()
 
-   # plt.savefig(f"../images/LSTM-GRU__{m_type}.png", dpi=300, bbox_inches="tight")
     plt.show()
 ```
 
@@ -1119,7 +1203,7 @@ for m_type in model_types:
     plt.title(f'{m_type}: Real vs Predicho (Zoom 200h)')
     plt.legend(); plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.savefig(f"../images/LSTM-GRU__{m_type}_subsample200.png", dpi=300, bbox_inches="tight")
+
     plt.show()
 ```
 
@@ -1148,6 +1232,7 @@ Dado que PyTorch no se ha trabajado todavía en profundidad en la asignatura, el
 **IMPORTANTE: Es recomendable realizar este ejercicio para preparar las próximas PEC, que serán en PyTorch. Si decides no hacerlo, puedes continuar con el resto de ejercicios, pero tendrás que realizar el Ejecicio 6 de búsqueda de hiperparámetros con Optuna para poder conseguir un 10 en la PEC.**
 
 ---
+# 3. LSTM con PyTorch
 
 **Ejercicio [1 pts.].** Continúa el ejercicio anterior, pero ahora implementa los modelos recurrentes usando PyTorch en lugar de TensorFlow/Keras. Para ello:
 
@@ -1252,22 +1337,28 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-# Variables heredadas
-BATCH =    BATCH
+# Variables heredadas (Ver variables en los Ejercicios 1 y 2)
+# Renombre de UNITS para ser consistente con el codigo facilitado por el profesor
 N_UNITS =  UNITS
-EPOCHS =   EPOCHS
-DROPOUT = 0.2
+  
+# Recuperamos los datos del diccionario all_sequences
+X_train_3 = all_sequences[WS_BEST]['X_train']
+y_train_3 = all_sequences[WS_BEST]['y_train']
+X_val_3   = all_sequences[WS_BEST]['X_val']
+y_val_3   = all_sequences[WS_BEST]['y_val']
+X_test_3  = all_sequences[WS_BEST]['X_test']
+y_test_3  = all_sequences[WS_BEST]['y_test']
 
 # Conversión de datos a tensores
 # Uso .reshape(-1, 1) en las 'y' para que tengan forma [batch, 1] y no [batch]
-X_train_t = torch.tensor(X_train_2, dtype=torch.float32)
-y_train_t = torch.tensor(y_train_2, dtype=torch.float32).reshape(-1, 1)
-
-X_val_t = torch.tensor(X_val_2, dtype=torch.float32)
-y_val_t = torch.tensor(y_val_2, dtype=torch.float32).reshape(-1, 1)
+X_train_t = torch.tensor(X_train_3, dtype=torch.float32)
+y_train_t = torch.tensor(y_train_3, dtype=torch.float32).reshape(-1, 1)
   
-X_test_t = torch.tensor(X_test_2, dtype=torch.float32)
-y_test_t = torch.tensor(y_test_2, dtype=torch.float32).reshape(-1, 1)
+X_val_t = torch.tensor(X_val_3, dtype=torch.float32)
+y_val_t = torch.tensor(y_val_3, dtype=torch.float32).reshape(-1, 1)
+  
+X_test_t = torch.tensor(X_test_3, dtype=torch.float32)
+y_test_t = torch.tensor(y_test_3, dtype=torch.float32).reshape(-1, 1)
   
 # Creación del TensorDataset
 train_dataset = TensorDataset(X_train_t, y_train_t)
@@ -1368,47 +1459,33 @@ train_model(lstm_model)
 
 # Evaluación del modelo
 lstm_train_mse, lstm_train_rmse, lstm_train_mae = evaluate_model(lstm_model, train_loader)
-
 lstm_val_mse, lstm_val_rmse, lstm_val_mae = evaluate_model(lstm_model, val_loader)
-
 lstm_test_mse, lstm_test_rmse, lstm_test_mae = evaluate_model(lstm_model, test_loader)
 
 # Creamos una lista con los resultados específicos del modelo de PyTorch
 resultados_pytorch = [
     {"Window Size": 24, "Conjunto": "Entrenamiento", "MSE": round(lstm_train_mse, 4), "RMSE": round(lstm_train_rmse, 4), "MAE": round(lstm_train_mae, 4), "Modelo": "LSTM (PyTorch)"},
-
     {"Window Size": 24, "Conjunto": "Validación", "MSE": round(lstm_val_mse, 4), "RMSE": round(lstm_val_rmse, 4), "MAE": round(lstm_val_mae, 4), "Modelo": "LSTM (PyTorch)"},
-
     {"Window Size": 24, "Conjunto": "Test", "MSE": round(lstm_test_mse, 4), "RMSE": round(lstm_test_rmse, 4), "MAE": round(lstm_test_mae, 4), "Modelo": "LSTM (PyTorch)"}
 ]
-  
+ 
 # Lo convertimos a DataFrame temporal
 df_pytorch = pd.DataFrame(resultados_pytorch)
   
 # Cocatenamos tu df_final (Keras) con el nuevo df_pytorch para crear el dataframe final
-df_final_pytorch = pd.concat([df_final, df_pytorch], ignore_index=True)
+df_resultados_Ej3 = pd.concat([df_resultados_Ej2, df_pytorch], ignore_index=True)
   
-# Mostramos la tabla ordenada por Conjunto y luego por RMSE para ver el ranking
-print("\nCOMPARATIVA FINAL DE ARQUITECTURAS (WS=24) - KERAS VS PYTORCH:")
-print(df_final_pytorch.sort_values(by=['Conjunto', 'RMSE']).to_string(index=False))
+print("="*60)
+print("COMPARATIVA FINAL DE ARQUITECTURAS (WS=24) - KERAS VS PYTORCH:")
+print("="*60)
+print(df_resultados_Ej3.sort_values(by=['Conjunto', 'RMSE', 'MAE']).to_string(index=False))
+print("="*60)
 ```
 
-Epoch 1/200 - train_loss: 0.01647 - val_loss: 0.00474 Epoch 2/200 - train_loss: 0.00281 - val_loss: 0.00070 Epoch 3/200 - train_loss: 0.00232 - val_loss: 0.00068 Epoch 4/200 - train_loss: 0.00198 - val_loss: 0.00059 Epoch 5/200 - train_loss: 0.00193 - val_loss: 0.00030 Epoch 6/200 - train_loss: 0.00188 - val_loss: 0.00036 Epoch 7/200 - train_loss: 0.00167 - val_loss: 0.00058 Epoch 8/200 - train_loss: 0.00152 - val_loss: 0.00028 Epoch 9/200 - train_loss: 0.00146 - val_loss: 0.00028 Epoch 10/200 - train_loss: 0.00139 - val_loss: 0.00047 Epoch 11/200 - train_loss: 0.00135 - val_loss: 0.00047 Epoch 12/200 - train_loss: 0.00127 - val_loss: 0.00025 Epoch 13/200 - train_loss: 0.00114 - val_loss: 0.00046 Epoch 14/200 - train_loss: 0.00110 - val_loss: 0.00021 Epoch 15/200 - train_loss: 0.00109 - val_loss: 0.00024 Epoch 16/200 - train_loss: 0.00102 - val_loss: 0.00027 Epoch 17/200 - train_loss: 0.00096 - val_loss: 0.00028 Epoch 18/200 - train_loss: 0.00089 - val_loss: 0.00051 Epoch 19/200 - train_loss: 0.00085 - val_loss: 0.00019 Epoch 20/200 - train_loss: 0.00083 - val_loss: 0.00042 Epoch 21/200 - train_loss: 0.00079 - val_loss: 0.00019 Epoch 22/200 - train_loss: 0.00077 - val_loss: 0.00018 Epoch 23/200 - train_loss: 0.00073 - val_loss: 0.00036 Epoch 24/200 - train_loss: 0.00073 - val_loss: 0.00016 Epoch 25/200 - train_loss: 0.00066 - val_loss: 0.00027 Epoch 26/200 - train_loss: 0.00066 - val_loss: 0.00017 Epoch 27/200 - train_loss: 0.00063 - val_loss: 0.00017 Epoch 28/200 - train_loss: 0.00060 - val_loss: 0.00015 Epoch 29/200 - train_loss: 0.00059 - val_loss: 0.00016 Epoch 30/200 - train_loss: 0.00058 - val_loss: 0.00015 Epoch 31/200 - train_loss: 0.00059 - val_loss: 0.00016 Epoch 32/200 - train_loss: 0.00058 - val_loss: 0.00018 Epoch 33/200 - train_loss: 0.00058 - val_loss: 0.00018 Epoch 34/200 - train_loss: 0.00056 - val_loss: 0.00031 Epoch 35/200 - train_loss: 0.00057 - val_loss: 0.00015 Epoch 36/200 - train_loss: 0.00056 - val_loss: 0.00017 Epoch 37/200 - train_loss: 0.00054 - val_loss: 0.00015 Epoch 38/200 - train_loss: 0.00057 - val_loss: 0.00015 Epoch 39/200 - train_loss: 0.00054 - val_loss: 0.00025 Epoch 40/200 - train_loss: 0.00054 - val_loss: 0.00035 Epoch 41/200 - train_loss: 0.00056 - val_loss: 0.00033 Epoch 42/200 - train_loss: 0.00055 - val_loss: 0.00054 Epoch 43/200 - train_loss: 0.00056 - val_loss: 0.00018 Epoch 44/200 - train_loss: 0.00055 - val_loss: 0.00048 Epoch 45/200 - train_loss: 0.00055 - val_loss: 0.00016 Epoch 46/200 - train_loss: 0.00054 - val_loss: 0.00040 Epoch 47/200 - train_loss: 0.00057 - val_loss: 0.00022 Epoch 48/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 49/200 - train_loss: 0.00053 - val_loss: 0.00017 Epoch 50/200 - train_loss: 0.00054 - val_loss: 0.00014 Epoch 51/200 - train_loss: 0.00056 - val_loss: 0.00014 Epoch 52/200 - train_loss: 0.00054 - val_loss: 0.00017 Epoch 53/200 - train_loss: 0.00052 - val_loss: 0.00026 Epoch 54/200 - train_loss: 0.00053 - val_loss: 0.00022 Epoch 55/200 - train_loss: 0.00055 - val_loss: 0.00014 Epoch 56/200 - train_loss: 0.00052 - val_loss: 0.00033 Epoch 57/200 - train_loss: 0.00054 - val_loss: 0.00026 Epoch 58/200 - train_loss: 0.00052 - val_loss: 0.00018 Epoch 59/200 - train_loss: 0.00053 - val_loss: 0.00017 Epoch 60/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 61/200 - train_loss: 0.00053 - val_loss: 0.00014 Epoch 62/200 - train_loss: 0.00054 - val_loss: 0.00028 Epoch 63/200 - train_loss: 0.00055 - val_loss: 0.00014 Epoch 64/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 65/200 - train_loss: 0.00053 - val_loss: 0.00028 Epoch 66/200 - train_loss: 0.00054 - val_loss: 0.00060 Epoch 67/200 - train_loss: 0.00054 - val_loss: 0.00014 Epoch 68/200 - train_loss: 0.00054 - val_loss: 0.00016 Epoch 69/200 - train_loss: 0.00052 - val_loss: 0.00020 Epoch 70/200 - train_loss: 0.00054 - val_loss: 0.00015 Epoch 71/200 - train_loss: 0.00054 - val_loss: 0.00017 Epoch 72/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 73/200 - train_loss: 0.00054 - val_loss: 0.00022 Epoch 74/200 - train_loss: 0.00051 - val_loss: 0.00035 Epoch 75/200 - train_loss: 0.00053 - val_loss: 0.00019 Epoch 76/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 77/200 - train_loss: 0.00052 - val_loss: 0.00017 Epoch 78/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 79/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 80/200 - train_loss: 0.00054 - val_loss: 0.00014 Epoch 81/200 - train_loss: 0.00053 - val_loss: 0.00023 Epoch 82/200 - train_loss: 0.00051 - val_loss: 0.00024 Epoch 83/200 - train_loss: 0.00053 - val_loss: 0.00022 Epoch 84/200 - train_loss: 0.00054 - val_loss: 0.00025 Epoch 85/200 - train_loss: 0.00053 - val_loss: 0.00014 Epoch 86/200 - train_loss: 0.00053 - val_loss: 0.00022 Epoch 87/200 - train_loss: 0.00053 - val_loss: 0.00014 Epoch 88/200 - train_loss: 0.00052 - val_loss: 0.00024 Epoch 89/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 90/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 91/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 92/200 - train_loss: 0.00052 - val_loss: 0.00039 Epoch 93/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 94/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 95/200 - train_loss: 0.00054 - val_loss: 0.00016 Epoch 96/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 97/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 98/200 - train_loss: 0.00051 - val_loss: 0.00035 Epoch 99/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 100/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 101/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 102/200 - train_loss: 0.00052 - val_loss: 0.00034 Epoch 103/200 - train_loss: 0.00053 - val_loss: 0.00023 Epoch 104/200 - train_loss: 0.00052 - val_loss: 0.00019 Epoch 105/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 106/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 107/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 108/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 109/200 - train_loss: 0.00051 - val_loss: 0.00033 Epoch 110/200 - train_loss: 0.00051 - val_loss: 0.00023 Epoch 111/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 112/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 113/200 - train_loss: 0.00053 - val_loss: 0.00038 Epoch 114/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 115/200 - train_loss: 0.00049 - val_loss: 0.00019 Epoch 116/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 117/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 118/200 - train_loss: 0.00053 - val_loss: 0.00041 Epoch 119/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 120/200 - train_loss: 0.00052 - val_loss: 0.00018 Epoch 121/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 122/200 - train_loss: 0.00050 - val_loss: 0.00018 Epoch 123/200 - train_loss: 0.00051 - val_loss: 0.00021 Epoch 124/200 - train_loss: 0.00051 - val_loss: 0.00035 Epoch 125/200 - train_loss: 0.00052 - val_loss: 0.00020 Epoch 126/200 - train_loss: 0.00051 - val_loss: 0.00036 Epoch 127/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 128/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 129/200 - train_loss: 0.00052 - val_loss: 0.00017 Epoch 130/200 - train_loss: 0.00051 - val_loss: 0.00025 Epoch 131/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 132/200 - train_loss: 0.00052 - val_loss: 0.00027 Epoch 133/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 134/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 135/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 136/200 - train_loss: 0.00052 - val_loss: 0.00024 Epoch 137/200 - train_loss: 0.00051 - val_loss: 0.00037 Epoch 138/200 - train_loss: 0.00050 - val_loss: 0.00018 Epoch 139/200 - train_loss: 0.00051 - val_loss: 0.00023 Epoch 140/200 - train_loss: 0.00050 - val_loss: 0.00013 Epoch 141/200 - train_loss: 0.00052 - val_loss: 0.00013 Epoch 142/200 - train_loss: 0.00050 - val_loss: 0.00032 Epoch 143/200 - train_loss: 0.00050 - val_loss: 0.00013 Epoch 144/200 - train_loss: 0.00053 - val_loss: 0.00017 Epoch 145/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 146/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 147/200 - train_loss: 0.00051 - val_loss: 0.00013 Epoch 148/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 149/200 - train_loss: 0.00051 - val_loss: 0.00032 Epoch 150/200 - train_loss: 0.00052 - val_loss: 0.00018 Epoch 151/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 152/200 - train_loss: 0.00051 - val_loss: 0.00023 Epoch 153/200 - train_loss: 0.00050 - val_loss: 0.00029 Epoch 154/200 - train_loss: 0.00052 - val_loss: 0.00026 Epoch 155/200 - train_loss: 0.00050 - val_loss: 0.00015 Epoch 156/200 - train_loss: 0.00050 - val_loss: 0.00016 Epoch 157/200 - train_loss: 0.00052 - val_loss: 0.00013 Epoch 158/200 - train_loss: 0.00051 - val_loss: 0.00025 Epoch 159/200 - train_loss: 0.00050 - val_loss: 0.00021 Epoch 160/200 - train_loss: 0.00051 - val_loss: 0.00013 Epoch 161/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 162/200 - train_loss: 0.00050 - val_loss: 0.00013 Epoch 163/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 164/200 - train_loss: 0.00051 - val_loss: 0.00031 Epoch 165/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 166/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 167/200 - train_loss: 0.00051 - val_loss: 0.00021 Epoch 168/200 - train_loss: 0.00050 - val_loss: 0.00023 Epoch 169/200 - train_loss: 0.00050 - val_loss: 0.00021 Epoch 170/200 - train_loss: 0.00050 - val_loss: 0.00030 Epoch 171/200 - train_loss: 0.00051 - val_loss: 0.00030 Epoch 172/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 173/200 - train_loss: 0.00051 - val_loss: 0.00027 Epoch 174/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 175/200 - train_loss: 0.00050 - val_loss: 0.00015 Epoch 176/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 177/200 - train_loss: 0.00050 - val_loss: 0.00013 Epoch 178/200 - train_loss: 0.00052 - val_loss: 0.00047 Epoch 179/200 - train_loss: 0.00052 - val_loss: 0.00022 Epoch 180/200 - train_loss: 0.00050 - val_loss: 0.00017 Epoch 181/200 - train_loss: 0.00050 - val_loss: 0.00017 Epoch 182/200 - train_loss: 0.00050 - val_loss: 0.00031 Epoch 183/200 - train_loss: 0.00049 - val_loss: 0.00017 Epoch 184/200 - train_loss: 0.00052 - val_loss: 0.00024 Epoch 185/200 - train_loss: 0.00050 - val_loss: 0.00019 Epoch 186/200 - train_loss: 0.00050 - val_loss: 0.00019 Epoch 187/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 188/200 - train_loss: 0.00049 - val_loss: 0.00028 Epoch 189/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 190/200 - train_loss: 0.00050 - val_loss: 0.00016 Epoch 191/200 - train_loss: 0.00051 - val_loss: 0.00013 Epoch 192/200 - train_loss: 0.00050 - val_loss: 0.00023 Epoch 193/200 - train_loss: 0.00051 - val_loss: 0.00028 Epoch 194/200 - train_loss: 0.00049 - val_loss: 0.00016 Epoch 195/200 - train_loss: 0.00049 - val_loss: 0.00018 Epoch 196/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 197/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 198/200 - train_loss: 0.00051 - val_loss: 0.00020 Epoch 199/200 - train_loss: 0.00050 - val_loss: 0.00017 Epoch 200/200 - train_loss: 0.00051 - val_loss: 0.00024 
+Epoch 1/200 - train_loss: 0.02415 - val_loss: 0.00380 Epoch 2/200 - train_loss: 0.00313 - val_loss: 0.00154 Epoch 3/200 - train_loss: 0.00257 - val_loss: 0.00079 Epoch 4/200 - train_loss: 0.00222 - val_loss: 0.00142 Epoch 5/200 - train_loss: 0.00197 - val_loss: 0.00109 Epoch 6/200 - train_loss: 0.00178 - val_loss: 0.00057 Epoch 7/200 - train_loss: 0.00169 - val_loss: 0.00047 Epoch 8/200 - train_loss: 0.00163 - val_loss: 0.00060 Epoch 9/200 - train_loss: 0.00153 - val_loss: 0.00028 Epoch 10/200 - train_loss: 0.00146 - val_loss: 0.00031 Epoch 11/200 - train_loss: 0.00135 - val_loss: 0.00026 Epoch 12/200 - train_loss: 0.00129 - val_loss: 0.00024 Epoch 13/200 - train_loss: 0.00123 - val_loss: 0.00021 Epoch 14/200 - train_loss: 0.00115 - val_loss: 0.00031 Epoch 15/200 - train_loss: 0.00111 - val_loss: 0.00035 Epoch 16/200 - train_loss: 0.00101 - val_loss: 0.00018 Epoch 17/200 - train_loss: 0.00099 - val_loss: 0.00025 Epoch 18/200 - train_loss: 0.00097 - val_loss: 0.00070 Epoch 19/200 - train_loss: 0.00090 - val_loss: 0.00018 Epoch 20/200 - train_loss: 0.00085 - val_loss: 0.00018 Epoch 21/200 - train_loss: 0.00082 - val_loss: 0.00018 Epoch 22/200 - train_loss: 0.00079 - val_loss: 0.00026 Epoch 23/200 - train_loss: 0.00076 - val_loss: 0.00021 Epoch 24/200 - train_loss: 0.00073 - val_loss: 0.00018 Epoch 25/200 - train_loss: 0.00073 - val_loss: 0.00021 Epoch 26/200 - train_loss: 0.00068 - val_loss: 0.00015 Epoch 27/200 - train_loss: 0.00066 - val_loss: 0.00024 Epoch 28/200 - train_loss: 0.00065 - val_loss: 0.00016 Epoch 29/200 - train_loss: 0.00062 - val_loss: 0.00015 Epoch 30/200 - train_loss: 0.00063 - val_loss: 0.00015 Epoch 31/200 - train_loss: 0.00062 - val_loss: 0.00039 Epoch 32/200 - train_loss: 0.00061 - val_loss: 0.00022 Epoch 33/200 - train_loss: 0.00057 - val_loss: 0.00016 Epoch 34/200 - train_loss: 0.00060 - val_loss: 0.00015 Epoch 35/200 - train_loss: 0.00060 - val_loss: 0.00019 Epoch 36/200 - train_loss: 0.00059 - val_loss: 0.00038 Epoch 37/200 - train_loss: 0.00056 - val_loss: 0.00031 Epoch 38/200 - train_loss: 0.00056 - val_loss: 0.00019 Epoch 39/200 - train_loss: 0.00057 - val_loss: 0.00014 Epoch 40/200 - train_loss: 0.00056 - val_loss: 0.00014 Epoch 41/200 - train_loss: 0.00057 - val_loss: 0.00015 Epoch 42/200 - train_loss: 0.00057 - val_loss: 0.00020 Epoch 43/200 - train_loss: 0.00055 - val_loss: 0.00016 Epoch 44/200 - train_loss: 0.00055 - val_loss: 0.00018 Epoch 45/200 - train_loss: 0.00053 - val_loss: 0.00014 Epoch 46/200 - train_loss: 0.00054 - val_loss: 0.00017 Epoch 47/200 - train_loss: 0.00055 - val_loss: 0.00034 Epoch 48/200 - train_loss: 0.00055 - val_loss: 0.00015 Epoch 49/200 - train_loss: 0.00056 - val_loss: 0.00016 Epoch 50/200 - train_loss: 0.00055 - val_loss: 0.00031 Epoch 51/200 - train_loss: 0.00054 - val_loss: 0.00038 Epoch 52/200 - train_loss: 0.00054 - val_loss: 0.00033 Epoch 53/200 - train_loss: 0.00055 - val_loss: 0.00015 Epoch 54/200 - train_loss: 0.00055 - val_loss: 0.00014 Epoch 55/200 - train_loss: 0.00055 - val_loss: 0.00014 Epoch 56/200 - train_loss: 0.00052 - val_loss: 0.00021 Epoch 57/200 - train_loss: 0.00055 - val_loss: 0.00055 Epoch 58/200 - train_loss: 0.00053 - val_loss: 0.00024 Epoch 59/200 - train_loss: 0.00053 - val_loss: 0.00017 Epoch 60/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 61/200 - train_loss: 0.00053 - val_loss: 0.00022 Epoch 62/200 - train_loss: 0.00054 - val_loss: 0.00027 Epoch 63/200 - train_loss: 0.00054 - val_loss: 0.00024 Epoch 64/200 - train_loss: 0.00053 - val_loss: 0.00068 Epoch 65/200 - train_loss: 0.00055 - val_loss: 0.00016 Epoch 66/200 - train_loss: 0.00054 - val_loss: 0.00019 Epoch 67/200 - train_loss: 0.00053 - val_loss: 0.00026 Epoch 68/200 - train_loss: 0.00054 - val_loss: 0.00024 Epoch 69/200 - train_loss: 0.00053 - val_loss: 0.00021 Epoch 70/200 - train_loss: 0.00053 - val_loss: 0.00022 Epoch 71/200 - train_loss: 0.00053 - val_loss: 0.00026 Epoch 72/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 73/200 - train_loss: 0.00054 - val_loss: 0.00023 Epoch 74/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 75/200 - train_loss: 0.00052 - val_loss: 0.00030 Epoch 76/200 - train_loss: 0.00052 - val_loss: 0.00036 Epoch 77/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 78/200 - train_loss: 0.00053 - val_loss: 0.00035 Epoch 79/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 80/200 - train_loss: 0.00053 - val_loss: 0.00014 Epoch 81/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 82/200 - train_loss: 0.00052 - val_loss: 0.00017 Epoch 83/200 - train_loss: 0.00053 - val_loss: 0.00016 Epoch 84/200 - train_loss: 0.00053 - val_loss: 0.00031 Epoch 85/200 - train_loss: 0.00053 - val_loss: 0.00018 Epoch 86/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 87/200 - train_loss: 0.00052 - val_loss: 0.00019 Epoch 88/200 - train_loss: 0.00053 - val_loss: 0.00024 Epoch 89/200 - train_loss: 0.00053 - val_loss: 0.00073 Epoch 90/200 - train_loss: 0.00052 - val_loss: 0.00022 Epoch 91/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 92/200 - train_loss: 0.00052 - val_loss: 0.00026 Epoch 93/200 - train_loss: 0.00053 - val_loss: 0.00016 Epoch 94/200 - train_loss: 0.00052 - val_loss: 0.00020 Epoch 95/200 - train_loss: 0.00052 - val_loss: 0.00023 Epoch 96/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 97/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 98/200 - train_loss: 0.00053 - val_loss: 0.00017 Epoch 99/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 100/200 - train_loss: 0.00052 - val_loss: 0.00020 Epoch 101/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 102/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 103/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 104/200 - train_loss: 0.00052 - val_loss: 0.00044 Epoch 105/200 - train_loss: 0.00053 - val_loss: 0.00056 Epoch 106/200 - train_loss: 0.00051 - val_loss: 0.00013 Epoch 107/200 - train_loss: 0.00052 - val_loss: 0.00034 Epoch 108/200 - train_loss: 0.00052 - val_loss: 0.00018 Epoch 109/200 - train_loss: 0.00051 - val_loss: 0.00037 Epoch 110/200 - train_loss: 0.00052 - val_loss: 0.00029 Epoch 111/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 112/200 - train_loss: 0.00050 - val_loss: 0.00019 Epoch 113/200 - train_loss: 0.00051 - val_loss: 0.00016 Epoch 114/200 - train_loss: 0.00051 - val_loss: 0.00047 Epoch 115/200 - train_loss: 0.00052 - val_loss: 0.00016 Epoch 116/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 117/200 - train_loss: 0.00051 - val_loss: 0.00031 Epoch 118/200 - train_loss: 0.00052 - val_loss: 0.00017 Epoch 119/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 120/200 - train_loss: 0.00052 - val_loss: 0.00019 Epoch 121/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 122/200 - train_loss: 0.00051 - val_loss: 0.00035 Epoch 123/200 - train_loss: 0.00051 - val_loss: 0.00024 Epoch 124/200 - train_loss: 0.00051 - val_loss: 0.00023 Epoch 125/200 - train_loss: 0.00051 - val_loss: 0.00030 Epoch 126/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 127/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 128/200 - train_loss: 0.00052 - val_loss: 0.00032 Epoch 129/200 - train_loss: 0.00052 - val_loss: 0.00015 Epoch 130/200 - train_loss: 0.00051 - val_loss: 0.00022 Epoch 131/200 - train_loss: 0.00051 - val_loss: 0.00021 Epoch 132/200 - train_loss: 0.00053 - val_loss: 0.00015 Epoch 133/200 - train_loss: 0.00052 - val_loss: 0.00019 Epoch 134/200 - train_loss: 0.00051 - val_loss: 0.00021 Epoch 135/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 136/200 - train_loss: 0.00052 - val_loss: 0.00017 Epoch 137/200 - train_loss: 0.00051 - val_loss: 0.00024 Epoch 138/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 139/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 140/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 141/200 - train_loss: 0.00052 - val_loss: 0.00027 Epoch 142/200 - train_loss: 0.00050 - val_loss: 0.00024 Epoch 143/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 144/200 - train_loss: 0.00051 - val_loss: 0.00028 Epoch 145/200 - train_loss: 0.00051 - val_loss: 0.00016 Epoch 146/200 - train_loss: 0.00052 - val_loss: 0.00014 Epoch 147/200 - train_loss: 0.00050 - val_loss: 0.00017 Epoch 148/200 - train_loss: 0.00050 - val_loss: 0.00021 Epoch 149/200 - train_loss: 0.00051 - val_loss: 0.00016 Epoch 150/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 151/200 - train_loss: 0.00051 - val_loss: 0.00034 Epoch 152/200 - train_loss: 0.00051 - val_loss: 0.00016 Epoch 153/200 - train_loss: 0.00050 - val_loss: 0.00015 Epoch 154/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 155/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 156/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 157/200 - train_loss: 0.00051 - val_loss: 0.00045 Epoch 158/200 - train_loss: 0.00051 - val_loss: 0.00034 Epoch 159/200 - train_loss: 0.00050 - val_loss: 0.00017 Epoch 160/200 - train_loss: 0.00051 - val_loss: 0.00019 Epoch 161/200 - train_loss: 0.00051 - val_loss: 0.00026 Epoch 162/200 - train_loss: 0.00050 - val_loss: 0.00030 Epoch 163/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 164/200 - train_loss: 0.00050 - val_loss: 0.00022 Epoch 165/200 - train_loss: 0.00050 - val_loss: 0.00021 Epoch 166/200 - train_loss: 0.00050 - val_loss: 0.00023 Epoch 167/200 - train_loss: 0.00051 - val_loss: 0.00023 Epoch 168/200 - train_loss: 0.00052 - val_loss: 0.00017 Epoch 169/200 - train_loss: 0.00050 - val_loss: 0.00025 Epoch 170/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 171/200 - train_loss: 0.00052 - val_loss: 0.00020 Epoch 172/200 - train_loss: 0.00052 - val_loss: 0.00023 Epoch 173/200 - train_loss: 0.00049 - val_loss: 0.00018 Epoch 174/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 175/200 - train_loss: 0.00050 - val_loss: 0.00019 Epoch 176/200 - train_loss: 0.00052 - val_loss: 0.00018 Epoch 177/200 - train_loss: 0.00050 - val_loss: 0.00020 Epoch 178/200 - train_loss: 0.00052 - val_loss: 0.00020 Epoch 179/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 180/200 - train_loss: 0.00051 - val_loss: 0.00020 Epoch 181/200 - train_loss: 0.00051 - val_loss: 0.00013 Epoch 182/200 - train_loss: 0.00050 - val_loss: 0.00032 Epoch 183/200 - train_loss: 0.00051 - val_loss: 0.00017 Epoch 184/200 - train_loss: 0.00050 - val_loss: 0.00032 Epoch 185/200 - train_loss: 0.00050 - val_loss: 0.00015 Epoch 186/200 - train_loss: 0.00050 - val_loss: 0.00014 Epoch 187/200 - train_loss: 0.00051 - val_loss: 0.00014 Epoch 188/200 - train_loss: 0.00052 - val_loss: 0.00022 Epoch 189/200 - train_loss: 0.00051 - val_loss: 0.00015 Epoch 190/200 - train_loss: 0.00051 - val_loss: 0.00035 Epoch 191/200 - train_loss: 0.00050 - val_loss: 0.00022 Epoch 192/200 - train_loss: 0.00050 - val_loss: 0.00023 Epoch 193/200 - train_loss: 0.00050 - val_loss: 0.00027 Epoch 194/200 - train_loss: 0.00050 - val_loss: 0.00021 Epoch 195/200 - train_loss: 0.00049 - val_loss: 0.00016 Epoch 196/200 - train_loss: 0.00050 - val_loss: 0.00037 Epoch 197/200 - train_loss: 0.00051 - val_loss: 0.00051 Epoch 198/200 - train_loss: 0.00051 - val_loss: 0.00018 Epoch 199/200 - train_loss: 0.00051 - val_loss: 0.00025 Epoch 200/200 - train_loss: 0.00050 - val_loss: 0.00018
 
-COMPARATIVA FINAL DE ARQUITECTURAS (WS=24) - KERAS VS PYTORCH:
-Window Size Conjunto MSE RMSE MAE Modelo 
-24 Entrenamiento 0.95 0.98 0.67 LSTM (PyTorch) 
-24 Entrenamiento 1.07 1.04 0.73 SimpleRNN 
-24 Entrenamiento 1.18 1.09 0.77 GRU 
-24 Entrenamiento 1.29 1.14 0.82 LSTM 
-24 Test 0.48 0.69 0.48 SimpleRNN 
-24 Test 0.49 0.70 0.48 GRU 
-24 Test 0.49 0.70 0.50 LSTM (PyTorch) 
-24 Test 0.61 0.78 0.58 LSTM 
-24 Validación 0.44 0.66 0.49 GRU 
-24 Validación 0.44 0.67 0.50 SimpleRNN 
-24 Validación 0.50 0.70 0.53 LSTM 
-24 Validación 0.61 0.78 0.63 LSTM (PyTorch)
+
+============================================================ COMPARATIVA FINAL DE ARQUITECTURAS (WS=24) - KERAS VS PYTORCH: ============================================================ Window Size Conjunto MSE RMSE MAE Modelo 24 Entrenamiento 0.93 0.97 0.66 LSTM (PyTorch) 24 Entrenamiento 0.95 0.97 0.67 SimpleRNN 24 Entrenamiento 1.11 1.05 0.75 GRU 24 Entrenamiento 1.29 1.14 0.82 LSTM 24 Test 0.42 0.65 0.44 LSTM (PyTorch) 24 Test 0.43 0.66 0.46 SimpleRNN 24 Test 0.47 0.68 0.49 GRU 24 Test 0.61 0.78 0.58 LSTM 24 Validación 0.36 0.60 0.44 SimpleRNN 24 Validación 0.41 0.64 0.48 GRU 24 Validación 0.45 0.67 0.51 LSTM (PyTorch) 24 Validación 0.50 0.70 0.53 LSTM ============================================================
 
 <div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
 
