@@ -1831,6 +1831,23 @@ AG es una colección de más de 1 millón de artículos de noticias. ComeToMyHea
 
 El conjunto de datos de clasificación de temas de noticias de AG se construye eligiendo las 4 clases más grandes del corpus original. Cada clase contiene 30.000 muestras de entrenamiento y 1.900 muestras de prueba. El número total de muestras de entrenamiento es de 120.000 y de pruebas de 7.600.
 
+Algunas cosas importantes a tener en cuenta sobre este dataset:
+
+- **Splits disponibles:** `train` (120.000 ejemplos) y `test` (7.600 ejemplos)
+- **Campos por ejemplo:**
+  - `title`: título de la noticia
+  - `description`: descripción/cuerpo
+  - `label`: etiqueta numérica (0–3)
+  - El dataset está **perfectamente balanceado**: 30.000 ejemplos por clase en train y 1.900 en test.
+- **Clases** (4 categorías
+
+  | Label | Categoría |
+  |-------|-----------|
+  | 0 | World |
+  | 1 | Sports |
+  | 2 | Business |
+  | 3 | Sci/Tech |
+
 ```python
 # Carga del dataset AG News (ag_news_subset)
 dataset, info = tfds.load('ag_news_subset',
@@ -1857,3 +1874,302 @@ print("="*60)
 
 tfds.core.DatasetInfo( name='ag_news_subset', full_name='ag_news_subset/1.0.0', description=""" AG is a collection of more than 1 million news articles. News articles have been gathered from more than 2000 news sources by ComeToMyHead in more than 1 year of activity. ComeToMyHead is an academic news search engine which has been running since July, 2004. The dataset is provided by the academic comunity for research purposes in data mining (clustering, classification, etc), information retrieval (ranking, search, etc), xml, data compression, data streaming, and any other non-commercial activity. For more information, please refer to the link [http://www.di.unipi.it/~gulli/AG_corpus_of_news_articles.html](http://www.di.unipi.it/~gulli/AG_corpus_of_news_articles.html) . The AG's news topic classification dataset is constructed by Xiang Zhang (xiang.zhang@nyu.edu) from the dataset above. It is used as a text classification benchmark in the following paper: Xiang Zhang, Junbo Zhao, Yann LeCun. Character-level Convolutional Networks for Text Classification. Advances in Neural Information Processing Systems 28 (NIPS 2015). The AG's news topic classification dataset is constructed by choosing 4 largest classes from the original corpus. Each class contains 30,000 training samples and 1,900 testing samples. The total number of training samples is 120,000 and testing 7,600. """, homepage='[https://arxiv.org/abs/1509.01626](https://arxiv.org/abs/1509.01626)', data_dir='C:\\Users\\jubeda2\\tensorflow_datasets\\ag_news_subset\\1.0.0', file_format=tfrecord, download_size=11.24 MiB, dataset_size=35.79 MiB, features=FeaturesDict({ 'description': Text(shape=(), dtype=string), 'label': ClassLabel(shape=(), dtype=int64, num_classes=4), 'title': Text(shape=(), dtype=string), }), supervised_keys=('description', 'label'), disable_shuffling=False, nondeterministic_order=False, splits={ 'test': <SplitInfo num_examples=7600, num_shards=1>, 'train': <SplitInfo num_examples=120000, num_shards=1>, }, citation="""@misc{zhang2015characterlevel, title={Character-level Convolutional Networks for Text Classification}, author={Xiang Zhang and Junbo Zhao and Yann LeCun}, year={2015}, eprint={1509.01626}, archivePrefix={arXiv}, primaryClass={cs.LG} }""", ) ============================================================ Información del dataset: ============================================================ Clases disponibles: ['World', 'Sports', 'Business', 'Sci/Tech'] Ejemplos de entrenamiento: 120000 Ejemplos de prueba: 7600 ============================================================
 
+## 5.2. Preprocesado de los textos
+
+
+### 5.2.1. Division del dataset (Train 80 % y Test 20 %)
+
+```python
+# Extraemos todos los textos y etiquetas del dataset cargado en el paso anterior
+texts = []
+labels = []
+
+# Juntamos train y test originales para hacer la división 80 train y 20 test
+for text, label in dataset['train'].concatenate(dataset['test']):
+    # Decodificamos el tensor a string
+    texts.append(text.numpy().decode('utf-8')) 
+    labels.append(label.numpy())
+
+# Convertimos a arrays de numpy para facilitar el manejo
+texts = np.array(texts)
+labels = np.array(labels)
+
+# Divide los datos en un 80% para entrenamiento y 20% para test 
+X_train, X_test, y_train, y_test = train_test_split(texts, labels, test_size=0.20, random_state=SEED, stratify=labels)
+
+print(f"Tamaño total: {len(texts)}")
+print(f" - X_train: {X_train.shape} | y_train: {y_train.shape}")
+print(f" - X_test:  {X_test.shape}  | y_test: {y_test.shape}")
+
+# Distribución de clases 
+print(f"\nDistribución de clases en y_train:")
+clases = ['World', 'Sports', 'Business', 'Sci/Tech']
+for i, clase in enumerate(clases):
+    n = np.sum(y_train == i)
+    print(f"   Clase {i} ({clase}): {n} ejemplos ({n/len(y_train)*100:.1f}%)")
+```
+
+Tamaño total: 127600
+ - X_train: (102080,) | y_train: (102080,)
+ - X_test:  (25520,)  | y_test: (25520,)
+
+Distribución de clases en y_train:
+   Clase 0 (World): 25520 ejemplos (25.0%)
+   Clase 1 (Sports): 25520 ejemplos (25.0%)
+   Clase 2 (Business): 25520 ejemplos (25.0%)
+   Clase 3 (Sci/Tech): 25520 ejemplos (25.0%)
+
+### 5.2.2. Tokenizar los textos y limitar el vocabulario a 20000 palabras  
+
+```python
+# Tokeniza los textos y limita el vocabulario a 20 000 palabras ---
+VOCAB_SIZE = 20000
+
+tokenizer = Tokenizer(num_words=VOCAB_SIZE)
+
+# El tokenizador solo debe ajustarse ("aprender" el vocabulario) con los datos de entrenamiento
+tokenizer.fit_on_texts(X_train)
+
+print(f"Palabras únicas encontradas : {len(tokenizer.word_index)}")
+```
+
+Palabras únicas encontradas : 60034
+
+### 5.2.3. Convertir textos en secuencias numéricas
+
+```python
+# Convierte los textos en secuencias numéricas 
+X_train_seq = tokenizer.texts_to_sequences(X_train)
+X_test_seq = tokenizer.texts_to_sequences(X_test)
+
+# Ejemplo para verificar
+print("\nTexto original X_train:", X_train[0])
+print("Secuencia num. :", X_train_seq[0])
+print("\nTexto original X_test:", X_test[0])
+print("Secuencia num. :", X_test_seq[0])
+```
+
+Texto original X_train  : Halfway around the world, standing virtually in the middle of the Pacific Ocean, the incomparable Timmy Chang is just days away from throwing his first pass of the season. From my tattered sofa, I will be watching him. I want you to watch him, too.
+Secuencia num.  : [5756, 365, 1, 55, 3054, 3989, 5, 1, 1077, 4, 1, 1513, 2819, 1, 12589, 17, 158, 272, 507, 23, 3419, 25, 37, 1283, 4, 1, 103, 23, 1244, 264, 26, 30, 2760, 240, 264, 993, 175, 3, 1365, 240, 662]
+
+Texto original X_test  : AFP - UN Security Council nations met to look for common ground on a disputed US draft resolution pressing Sudan to rein in Arab militias behind the bloodshed in Darfur.
+Secuencia num.  : [155, 459, 107, 779, 361, 1144, 3, 709, 8, 1687, 1039, 7, 2, 2979, 33, 1948, 1765, 5890, 900, 3, 5841, 5, 1414, 5610, 627, 1, 8666, 5, 658]
+
+### 5.2.4. Aplicar padding/truncation para una longitud fija de 100
+
+# Aplica padding/truncation para una longitud fija de 100 
+```python
+MAX_LENGTH = 100
+
+X_train_padded = pad_sequences(X_train_seq, 
+                               maxlen=MAX_LENGTH, 
+                               padding='post',    # rellena con 0s al final
+                               truncating='post') # trunca por el final si supera MAX_LEN
+
+X_test_padded = pad_sequences(X_test_seq, 
+                              maxlen=MAX_LENGTH, 
+                              padding='post',    # rellena con 0s al final
+                              truncating='post') # trunca por el final si supera MAX_LEN
+
+# Verificación de las dimensiones resultantes
+print(f"Dimensiones resultantes después de tokenizar y aplicar padding:")
+print(f" - X_train_pad : {X_train_padded.shape}")   # (102080, 100)
+print(f" - X_test_pad  : {X_test_padded.shape}")    # (25520,  100)
+print(f" - y_train     : {y_train.shape}")
+print(f" - y_test      : {y_test.shape}")
+```
+
+Dimensiones resultantes después de tokenizar y aplicar padding:
+ - X_train_pad : (102080, 100)
+ - X_test_pad  : (25520, 100)
+ - y_train     : (102080,)
+ - y_test      : (25520,)
+
+## 5.3. Definición y Construcción del Modelo
+
+```python
+# Definir la ruta 
+save_dir_ex5 = r"../Clasiffier_GRU"
+if not os.path.exists(save_dir_ex5):
+    os.makedirs(save_dir_ex5)
+
+# Definimos la arquitectura del modelo
+model = Sequential([
+    # Definimos la capa de entrada con la forma de las secuencias (100 palabras por texto)
+    Input(shape=(MAX_LENGTH,)),
+
+    # Capa Embedding: Vocabulario de 20,000, salida de 128 y longitud fija de 100
+    Embedding(input_dim=VOCAB_SIZE, output_dim=128),
+    
+    # Capa GRU: Empezamos con 64 unidades (puedes ajustar este hiperparámetro)
+    GRU(64),
+    
+    # Capa Dropout: Apagamos el 20% de las neuronas para evitar sobreajuste
+    Dropout(0.2),
+    
+    # Capa Dense (Salida): 4 clases con activación softmax para obtener probabilidades
+    Dense(4, activation='softmax')
+])
+
+# Compilamos el modelo
+model.compile(
+    optimizer='adam',
+    loss='sparse_categorical_crossentropy', # Usamos 'sparse' porque las etiquetas son enteros (0, 1, 2, 3)
+    metrics=['accuracy']
+)
+
+model.summary()
+
+# Configuramos el EarlyStopping
+early_stopping = EarlyStopping(
+    monitor='val_loss',       # Vigilamos la pérdida en el conjunto de validación/test
+    patience=5,               # Esperamos 5 épocas sin mejora antes de parar
+    restore_best_weights=True # Nos quedamos con el mejor modelo, no con el último
+)
+
+# Entrenamos el modelo usando X_test_padded como conjunto de validación
+history = model.fit(
+    X_train_padded, y_train,
+    epochs=50, # Ponemos un número alto porque EarlyStopping lo detendrá antes si es necesario
+    batch_size=64,
+    validation_data=(X_test_padded, y_test),
+    callbacks=[early_stopping]
+)
+
+# Guardar el modelo en formato nativo de Keras
+model_filename = f"{save_dir_ex5}/Clasiffier_GRU.keras"
+model.save(model_filename)
+    
+# Guardar el historial (history.history es un dict) para no perder las gráficas
+history_filename = f"{save_dir_ex5}/Clasiffier_GRU.pkl"
+with open(history_filename, 'wb') as f:
+    pickle.dump(history.history, f)
+
+# Guardar el tokenizador para futuras predicciones )
+with open(f"{save_dir_ex5}/tokenizer.pkl", "wb") as f:
+    pickle.dump(tokenizer, f)
+```
+
+Model: "sequential_1"
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
+┃ Layer (type)                    ┃ Output Shape           ┃       Param # ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
+│ embedding_1 (Embedding)         │ (None, 100, 128)       │     2,560,000 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ gru_1 (GRU)                     │ (None, 64)             │        37,248 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dropout_1 (Dropout)             │ (None, 64)             │             0 │
+├─────────────────────────────────┼────────────────────────┼───────────────┤
+│ dense_1 (Dense)                 │ (None, 4)              │           260 │
+└─────────────────────────────────┴────────────────────────┴───────────────┘
+ Total params: 2,597,508 (9.91 MB)
+ Trainable params: 2,597,508 (9.91 MB)
+ Non-trainable params: 0 (0.00 B)
+Epoch 1/50
+1595/1595 ━━━━━━━━━━━━━━━━━━━━ 111s 68ms/step - accuracy: 0.2504 - loss: 1.3870 - val_accuracy: 0.2500 - val_loss: 1.3860
+Epoch 2/50
+1595/1595 ━━━━━━━━━━━━━━━━━━━━ 112s 70ms/step - accuracy: 0.2948 - loss: 1.3256 - val_accuracy: 0.8361 - val_loss: 0.4852
+Epoch 3/50
+1595/1595 ━━━━━━━━━━━━━━━━━━━━ 104s 65ms/step - accuracy: 0.8978 - loss: 0.3152 - val_accuracy: 0.9080 - val_loss: 0.2731
+Epoch 4/50
+1595/1595 ━━━━━━━━━━━━━━━━━━━━ 92s 58ms/step - accuracy: 0.9368 - loss: 0.1980 - val_accuracy: 0.9053 - val_loss: 0.2836
+Epoch 5/50
+1595/1595 ━━━━━━━━━━━━━━━━━━━━ 93s 58ms/step - accuracy: 0.9552 - loss: 0.1424 - val_accuracy: 0.9041 - val_loss: 0.3050
+Epoch 6/50
+1595/1595 ━━━━━━━━━━━━━━━━━━━━ 93s 59ms/step - accuracy: 0.9684 - loss: 0.1003 - val_accuracy: 0.9018 - val_loss: 0.3587
+Epoch 7/50
+1595/1595 ━━━━━━━━━━━━━━━━━━━━ 86s 54ms/step - accuracy: 0.9777 - loss: 0.0701 - val_accuracy: 0.8984 - val_loss: 0.3976
+Epoch 8/50
+1595/1595 ━━━━━━━━━━━━━━━━━━━━ 87s 54ms/step - accuracy: 0.9845 - loss: 0.0479 - val_accuracy: 0.8976 - val_loss: 0.4559
+
+
+## 5.4. Evaluación del rendimiento
+
+```python
+#  Obtenemos las predicciones del modelo para el conjunto de test
+y_pred_probs = model.predict(X_test_padded)
+# Extraemos la clase con mayor probabilidad para cada texto
+y_pred = np.argmax(y_pred_probs, axis=1)
+
+# Nombres de las clases de AG News para que los reportes sean legibles
+nombres_clases = ['World', 'Sports', 'Business', 'Sci/Tech']
+
+# --- Métrica de Accuracy ---
+accuracy = accuracy_score(y_test, y_pred)
+print(f"Accuracy en Test: {accuracy:.4f}\n")
+
+# --- Matriz de Confusión ---
+matriz = confusion_matrix(y_test, y_pred)
+print("Matriz de Confusión:")
+print(matriz)
+print("\n")
+
+# --- Classification Report ---
+reporte = classification_report(y_test, y_pred, target_names=nombres_clases)
+print("Classification Report:")
+print(reporte)
+```
+
+798/798 ━━━━━━━━━━━━━━━━━━━━ 6s 7ms/step
+Accuracy en Test: 0.9080
+
+Matriz de Confusión:
+[[5695  160  304  221]
+ [  82 6208   47   43]
+ [ 171   59 5713  437]
+ [ 224   60  539 5557]]
+
+
+Classification Report:
+              precision    recall  f1-score   support
+
+       World       0.92      0.89      0.91      6380
+      Sports       0.96      0.97      0.96      6380
+    Business       0.87      0.90      0.88      6380
+    Sci/Tech       0.89      0.87      0.88      6380
+
+    accuracy                           0.91     25520
+   macro avg       0.91      0.91      0.91     25520
+weighted avg       0.91      0.91      0.91     25520
+
+## 4.5. Visualizaciones: Curvas de loss de entrenamiento y validación
+
+```python
+# Extraemos los valores de pérdida del historial
+loss = history.history['loss']
+val_loss = history.history['val_loss']
+
+# Rango de épocas (de 1 al número total de épocas completadas)
+epochs = range(1, len(loss) + 1)
+
+# Configuramos el tamaño del gráfico
+plt.figure(figsize=(10, 6))
+
+# Dibujamos ambas curvas
+plt.plot(epochs, loss, 'bo-', label='Pérdida en Entrenamiento (Loss)')
+plt.plot(epochs, val_loss, 'ro-', label='Pérdida en Validación (Val Loss)')
+
+# Añadimos títulos y etiquetas
+plt.title('Curvas de Pérdida: Entrenamiento vs Validación')
+plt.xlabel('Épocas')
+plt.ylabel('Pérdida (Crossentropy)')
+plt.legend()
+plt.grid(True) # Una cuadrícula ayuda a leer mejor los valores
+
+# Mostramos el gráfico
+# Guardar la gráfica
+ruta_grafica_loss = os.path.join(save_dir_ex5, "Curvas_de_Perdida.png")
+plt.savefig(ruta_grafica_loss, dpi=300, bbox_inches="tight")
+plt.show()
+``` 
+
+![alt text](image.png)
+
+
+<div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+
+<p><strong>¿Por qué es necesario que todas las secuencias tengan la misma longitud?</strong></p>
+<p><strong>Solución:</strong> </p>
+<p><strong>¿Qué efecto tendría truncar las secuencias de forma demasiado agresiva sobre el rendimiento del clasificador?</strong></p>
+<p><strong>Solución:</strong> </p>
+</div>
