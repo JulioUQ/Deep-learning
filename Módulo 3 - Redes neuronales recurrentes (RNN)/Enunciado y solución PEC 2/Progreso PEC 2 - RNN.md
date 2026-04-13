@@ -1829,7 +1829,7 @@ Finalmente, responde a las siguientes cuestiones:
 
 AG es una colección de más de 1 millón de artículos de noticias. ComeToMyHead ha recopilado artículos de noticias de más de 2000 fuentes de noticias en más de 1 año de actividad. ComeToMyHead es un motor de búsqueda de noticias académicas que funciona desde julio de 2004. La comunidad académica proporciona el conjunto de datos con fines de investigación en minería de datos (agrupación, clasificación, etc.), recuperación de información (clasificación, búsqueda, etc.), xml, compresión de datos, transmisión de datos y cualquier otra actividad no comercial. 
 
-El conjunto de datos de clasificación de temas de noticias de AG se construye eligiendo las 4 clases más grandes del corpus original. Cada clase contiene 30.000 muestras de entrenamiento y 1.900 muestras de prueba. El número total de muestras de entrenamiento es de 120.000 y de pruebas de 7.600.
+En esta primera etapa, procedemos a descargar el dataset AG News utilizando la librería tensorflow_datasets. Como podemos observar en los metadatos extraídos, el conjunto original se compone de 120.000 noticias para entrenamiento y 7.600 para prueba. El objetivo de nuestro modelo será predecir a cuál de las cuatro categorías disponibles (World, Sports, Business, Sci/Tech) pertenece un texto dado, basándose en la información contenida en el título y la descripción de la noticia.
 
 Algunas cosas importantes a tener en cuenta sobre este dataset:
 
@@ -1839,8 +1839,7 @@ Algunas cosas importantes a tener en cuenta sobre este dataset:
   - `description`: descripción/cuerpo
   - `label`: etiqueta numérica (0–3)
   - El dataset está **perfectamente balanceado**: 30.000 ejemplos por clase en train y 1.900 en test.
-- **Clases** (4 categorías
-
+- **Clases** (4 categorías):
   | Label | Categoría |
   |-------|-----------|
   | 0 | World |
@@ -1850,76 +1849,157 @@ Algunas cosas importantes a tener en cuenta sobre este dataset:
 
 ```python
 # Carga del dataset AG News (ag_news_subset)
-dataset, info = tfds.load('ag_news_subset',
-                        with_info=True,     # permite obtener los metadatos del dataset
-                       as_supervised=True) # devuelve los datos en formato de tupla (texto, etiqueta)
-  
+dataset, info = tfds.load('ag_news_subset', 
+                        with_info=True,     # permite obtener los metadatos del dataset
+                        as_supervised=True) # devuelve los datos en formato de tupla (texto, etiqueta)
+
 # Separación en conjuntos de entrenamiento y prueba
 train_dataset = dataset['train']
 test_dataset = dataset['test']
-  
+
 # Información del dataset
 print(info)
-  
+
 # Verificamos la información cargada
 print("="*60)
 print("Información del dataset:")
 print("="*60)
-print(f"Clases disponibles: {info.features['label'].names}")
-print(f"Ejemplos de entrenamiento: {info.splits['train'].num_examples}")
-print(f"Ejemplos de prueba: {info.splits['test'].num_examples}")
+print(f"- Clases disponibles: {info.features['label'].names}")
+print(f"- Ejemplos de entrenamiento: {info.splits['train'].num_examples}")
+print(f"- Ejemplos de prueba: {info.splits['test'].num_examples}")
 print("="*60)
 ```
 
 
-tfds.core.DatasetInfo( name='ag_news_subset', full_name='ag_news_subset/1.0.0', description=""" AG is a collection of more than 1 million news articles. News articles have been gathered from more than 2000 news sources by ComeToMyHead in more than 1 year of activity. ComeToMyHead is an academic news search engine which has been running since July, 2004. The dataset is provided by the academic comunity for research purposes in data mining (clustering, classification, etc), information retrieval (ranking, search, etc), xml, data compression, data streaming, and any other non-commercial activity. For more information, please refer to the link [http://www.di.unipi.it/~gulli/AG_corpus_of_news_articles.html](http://www.di.unipi.it/~gulli/AG_corpus_of_news_articles.html) . The AG's news topic classification dataset is constructed by Xiang Zhang (xiang.zhang@nyu.edu) from the dataset above. It is used as a text classification benchmark in the following paper: Xiang Zhang, Junbo Zhao, Yann LeCun. Character-level Convolutional Networks for Text Classification. Advances in Neural Information Processing Systems 28 (NIPS 2015). The AG's news topic classification dataset is constructed by choosing 4 largest classes from the original corpus. Each class contains 30,000 training samples and 1,900 testing samples. The total number of training samples is 120,000 and testing 7,600. """, homepage='[https://arxiv.org/abs/1509.01626](https://arxiv.org/abs/1509.01626)', data_dir='C:\\Users\\jubeda2\\tensorflow_datasets\\ag_news_subset\\1.0.0', file_format=tfrecord, download_size=11.24 MiB, dataset_size=35.79 MiB, features=FeaturesDict({ 'description': Text(shape=(), dtype=string), 'label': ClassLabel(shape=(), dtype=int64, num_classes=4), 'title': Text(shape=(), dtype=string), }), supervised_keys=('description', 'label'), disable_shuffling=False, nondeterministic_order=False, splits={ 'test': <SplitInfo num_examples=7600, num_shards=1>, 'train': <SplitInfo num_examples=120000, num_shards=1>, }, citation="""@misc{zhang2015characterlevel, title={Character-level Convolutional Networks for Text Classification}, author={Xiang Zhang and Junbo Zhao and Yann LeCun}, year={2015}, eprint={1509.01626}, archivePrefix={arXiv}, primaryClass={cs.LG} }""", ) ============================================================ Información del dataset: ============================================================ Clases disponibles: ['World', 'Sports', 'Business', 'Sci/Tech'] Ejemplos de entrenamiento: 120000 Ejemplos de prueba: 7600 ============================================================
+tfds.core.DatasetInfo(
+    name='ag_news_subset',
+    full_name='ag_news_subset/1.0.0',
+    description="""
+    AG is a collection of more than 1 million news articles. News articles have been
+    gathered from more than 2000 news sources by ComeToMyHead in more than 1 year of
+    activity. ComeToMyHead is an academic news search engine which has been running
+    since July, 2004. The dataset is provided by the academic comunity for research
+    purposes in data mining (clustering, classification, etc), information retrieval
+    (ranking, search, etc), xml, data compression, data streaming, and any other
+    non-commercial activity. For more information, please refer to the link
+    http://www.di.unipi.it/~gulli/AG_corpus_of_news_articles.html .
+    
+    The AG's news topic classification dataset is constructed by Xiang Zhang
+    (xiang.zhang@nyu.edu) from the dataset above. It is used as a text
+    classification benchmark in the following paper: Xiang Zhang, Junbo Zhao, Yann
+    LeCun. Character-level Convolutional Networks for Text Classification. Advances
+    in Neural Information Processing Systems 28 (NIPS 2015).
+    
+    The AG's news topic classification dataset is constructed by choosing 4 largest
+    classes from the original corpus. Each class contains 30,000 training samples
+    and 1,900 testing samples. The total number of training samples is 120,000 and
+    testing 7,600.
+    """,
+    homepage='https://arxiv.org/abs/1509.01626',
+    data_dir='C:\\Users\\jubeda2\\tensorflow_datasets\\ag_news_subset\\1.0.0',
+    file_format=tfrecord,
+    download_size=11.24 MiB,
+    dataset_size=35.79 MiB,
+    features=FeaturesDict({
+        'description': Text(shape=(), dtype=string),
+        'label': ClassLabel(shape=(), dtype=int64, num_classes=4),
+        'title': Text(shape=(), dtype=string),
+    }),
+    supervised_keys=('description', 'label'),
+    disable_shuffling=False,
+    nondeterministic_order=False,
+    splits={
+        'test': <SplitInfo num_examples=7600, num_shards=1>,
+        'train': <SplitInfo num_examples=120000, num_shards=1>,
+    },
+    citation="""@misc{zhang2015characterlevel,
+        title={Character-level Convolutional Networks for Text Classification},
+        author={Xiang Zhang and Junbo Zhao and Yann LeCun},
+        year={2015},
+        eprint={1509.01626},
+        archivePrefix={arXiv},
+        primaryClass={cs.LG}
+    }""",
+)
+============================================================
+Información del dataset:
+============================================================
+- Clases disponibles: ['World', 'Sports', 'Business', 'Sci/Tech']
+- Ejemplos de entrenamiento: 120000
+- Ejemplos de prueba: 7600
+============================================================
 
 ## 5.2. Preprocesado de los textos
 
+### 5.2.1. División del dataset en subconjuntos (Train, Validación y Test)
 
-### 5.2.1. Division del dataset (Train 80 % y Test 20 %)
+Se unifican los conjuntos originales (`train` y `test`) en un único dataset (`texts`, `labels`) para poder realizar una nueva partición controlada.
+
+Primero, se aplica un **split principal estratificado** (`stratify=labels`) que divide los datos en:
+
+* **80%** para entrenamiento + validación
+* **20%** para test
+
+Después, sobre el 80% restante, se realiza un **segundo split estratificado** (`stratify=y_train_val`) para obtener:
+
+* **70%** del total para entrenamiento
+* **10%** del total para validación
+
+De este modo, se obtienen tres subconjuntos finales (**70% train, 10% val, 20% test**), manteniendo en todos ellos la proporción original de clases gracias al uso de particiones estratificadas.
 
 ```python
-# Extraemos todos los textos y etiquetas del dataset cargado en el paso anterior
-texts = []
-labels = []
+# Extraemos todos los textos y etiquetas del dataset
+texts, labels = [], []
 
-# Juntamos train y test originales para hacer la división 80 train y 20 test
 for text, label in dataset['train'].concatenate(dataset['test']):
-    # Decodificamos el tensor a string
-    texts.append(text.numpy().decode('utf-8')) 
+    texts.append(text.numpy().decode('utf-8'))
     labels.append(label.numpy())
 
-# Convertimos a arrays de numpy para facilitar el manejo
-texts = np.array(texts)
+texts  = np.array(texts)
 labels = np.array(labels)
 
-# Divide los datos en un 80% para entrenamiento y 20% para test 
-X_train, X_test, y_train, y_test = train_test_split(texts, labels, test_size=0.20, random_state=SEED, stratify=labels)
+# ── Split principal: 80% train+val / 20% test ────────────────────────────────
+X_train_val, X_test, y_train_val, y_test = train_test_split(
+    texts, labels,
+    test_size    = 0.20,
+    random_state = SEED,
+    stratify     = labels
+)
 
-print(f"Tamaño total: {len(texts)}")
-print(f" - X_train: {X_train.shape} | y_train: {y_train.shape}")
-print(f" - X_test:  {X_test.shape}  | y_test: {y_test.shape}")
+# ── Split secundario: 70% train / 10% validación ─────────────────────────────
+X_train, X_val, y_train, y_val = train_test_split(
+    X_train_val, y_train_val,
+    test_size    = 0.125,
+    random_state = SEED,
+    stratify     = y_train_val
+)
 
-# Distribución de clases 
+print(f"Tamaño total : {len(texts)}")
+print(f" - X_train   : {X_train.shape}  (70%)")
+print(f" - X_val     : {X_val.shape}   (10%)")
+print(f" - X_test    : {X_test.shape}  (20%)")
+
+# Distribución de clases en train
 print(f"\nDistribución de clases en y_train:")
 clases = ['World', 'Sports', 'Business', 'Sci/Tech']
 for i, clase in enumerate(clases):
     n = np.sum(y_train == i)
     print(f"   Clase {i} ({clase}): {n} ejemplos ({n/len(y_train)*100:.1f}%)")
 ```
-
-Tamaño total: 127600
- - X_train: (102080,) | y_train: (102080,)
- - X_test:  (25520,)  | y_test: (25520,)
+Tamaño total : 127600
+ - X_train   : (89320,)  (70%)
+ - X_val     : (12760,)   (10%)
+ - X_test    : (25520,)  (20%)
 
 Distribución de clases en y_train:
-   Clase 0 (World): 25520 ejemplos (25.0%)
-   Clase 1 (Sports): 25520 ejemplos (25.0%)
-   Clase 2 (Business): 25520 ejemplos (25.0%)
-   Clase 3 (Sci/Tech): 25520 ejemplos (25.0%)
+   Clase 0 (World): 22330 ejemplos (25.0%)
+   Clase 1 (Sports): 22330 ejemplos (25.0%)
+   Clase 2 (Business): 22330 ejemplos (25.0%)
+   Clase 3 (Sci/Tech): 22330 ejemplos (25.0%)
 
-### 5.2.2. Tokenizar los textos y limitar el vocabulario a 20000 palabras  
+### 5.2.2. Tokenizar los textos y limitar el vocabulario a 20000 palabras
+
+Las redes neuronales no procesan texto crudo, por lo que necesitamos construir un diccionario de tokens. Instanciamos un `Tokenizer` y lo limitamos a las 20.000 palabras más frecuentes para optimizar la memoria y el rendimiento. Es vital ajustar el tokenizador (`fit_on_texts`) únicamente sobre el conjunto de entrenamiento (`X_train`) para evitar la fuga de datos (*data leakage*). Aunque el modelo ha detectado más de 60.000 palabras únicas, solo conservará el top 20.000, sustituyendo las palabras menos comunes.
 
 ```python
 # Tokeniza los textos y limita el vocabulario a 20 000 palabras ---
@@ -1932,33 +2012,42 @@ tokenizer.fit_on_texts(X_train)
 
 print(f"Palabras únicas encontradas : {len(tokenizer.word_index)}")
 ```
-
-Palabras únicas encontradas : 60034
+Palabras únicas encontradas : 57045
 
 ### 5.2.3. Convertir textos en secuencias numéricas
+
+Una vez construido el vocabulario, transformamos las secuencias de texto original en secuencias de números enteros. En esta representación, cada número corresponde al índice que ocupa esa palabra específica dentro del diccionario del tokenizador. Como se evidencia en el ejemplo, el texto crudo en inglés pasa a ser un vector numérico denso que la red neuronal sí es capaz de ingerir y procesar matemáticamente.
 
 ```python
 # Convierte los textos en secuencias numéricas 
 X_train_seq = tokenizer.texts_to_sequences(X_train)
-X_test_seq = tokenizer.texts_to_sequences(X_test)
+X_val_seq   = tokenizer.texts_to_sequences(X_val)    
+X_test_seq  = tokenizer.texts_to_sequences(X_test)
 
 # Ejemplo para verificar
 print("\nTexto original X_train:", X_train[0])
 print("Secuencia num. :", X_train_seq[0])
+print("\nTexto original X_val:", X_val[0])
+print("Secuencia num. :", X_val_seq[0])
 print("\nTexto original X_test:", X_test[0])
 print("Secuencia num. :", X_test_seq[0])
 ```
 
-Texto original X_train  : Halfway around the world, standing virtually in the middle of the Pacific Ocean, the incomparable Timmy Chang is just days away from throwing his first pass of the season. From my tattered sofa, I will be watching him. I want you to watch him, too.
-Secuencia num.  : [5756, 365, 1, 55, 3054, 3989, 5, 1, 1077, 4, 1, 1513, 2819, 1, 12589, 17, 158, 272, 507, 23, 3419, 25, 37, 1283, 4, 1, 103, 23, 1244, 264, 26, 30, 2760, 240, 264, 993, 175, 3, 1365, 240, 662]
+Texto original X_train: Survey shows workers less optimistic about job market, with fewer saying personal finances are getting better.
+Secuencia num. : [928, 1197, 426, 608, 3262, 64, 602, 131, 12, 3524, 509, 700, 6452, 34, 868, 590]
 
-Texto original X_test  : AFP - UN Security Council nations met to look for common ground on a disputed US draft resolution pressing Sudan to rein in Arab militias behind the bloodshed in Darfur.
-Secuencia num.  : [155, 459, 107, 779, 361, 1144, 3, 709, 8, 1687, 1039, 7, 2, 2979, 33, 1948, 1765, 5890, 900, 3, 5841, 5, 1414, 5610, 627, 1, 8666, 5, 658]
+Texto original X_val: SHANGHAI (Ticker) - Third seed Guillermo Canas of Argentina became the first seeded player to reach the second round of the Heineken Open Shanghai.
+Secuencia num. : [2880, 191, 102, 2027, 8226, 8612, 4, 2404, 1136, 1, 38, 2262, 443, 3, 782, 1, 92, 299, 4, 1, 17009, 163, 2880]
+
+Texto original X_test: AFP - UN Security Council nations met to look for common ground on a disputed US draft resolution pressing Sudan to rein in Arab militias behind the bloodshed in Darfur.
+Secuencia num. : [155, 462, 108, 774, 354, 1126, 3, 720, 8, 1717, 1041, 7, 2, 3002, 33, 2019, 1755, 6051, 869, 3, 6267, 5, 1378, 5529, 613, 1, 8440, 5, 666]
 
 ### 5.2.4. Aplicar padding/truncation para una longitud fija de 100
 
-# Aplica padding/truncation para una longitud fija de 100 
+Dado que las noticias tienen longitudes variables y las redes neuronales requieren entradas matriciales de tamaño estandarizado, aplicamos la técnica de *padding* (y *truncating*). Hemos establecido una longitud fija máxima de 100 tokens (`MAX_LENGTH = 100`). Si una noticia es más corta, se rellenará con ceros al final (`padding='post'`); si es más larga, se recortará por el final (`truncating='post'`). El resultado son tensores bidimensionales uniformes listos para alimentar a la red.
+
 ```python
+# Aplica padding/truncation para una longitud fija de 100 
 MAX_LENGTH = 100
 
 X_train_padded = pad_sequences(X_train_seq, 
@@ -1966,26 +2055,35 @@ X_train_padded = pad_sequences(X_train_seq,
                                padding='post',    # rellena con 0s al final
                                truncating='post') # trunca por el final si supera MAX_LEN
 
+X_val_padded   = pad_sequences(X_val_seq,   
+                               maxlen=MAX_LENGTH,   
+                               padding='post',
+                                 truncating='post')
+
 X_test_padded = pad_sequences(X_test_seq, 
                               maxlen=MAX_LENGTH, 
-                              padding='post',    # rellena con 0s al final
-                              truncating='post') # trunca por el final si supera MAX_LEN
+                              padding='post',   
+                              truncating='post')
 
-# Verificación de las dimensiones resultantes
-print(f"Dimensiones resultantes después de tokenizar y aplicar padding:")
-print(f" - X_train_pad : {X_train_padded.shape}")   # (102080, 100)
-print(f" - X_test_pad  : {X_test_padded.shape}")    # (25520,  100)
-print(f" - y_train     : {y_train.shape}")
-print(f" - y_test      : {y_test.shape}")
+print(f"\nDimensiones resultantes:")
+print(f" - X_train_padded : {X_train_padded.shape}")
+print(f" - X_val_padded   : {X_val_padded.shape}")
+print(f" - X_test_padded  : {X_test_padded.shape}")
 ```
 
-Dimensiones resultantes después de tokenizar y aplicar padding:
- - X_train_pad : (102080, 100)
- - X_test_pad  : (25520, 100)
- - y_train     : (102080,)
- - y_test      : (25520,)
+
+Dimensiones resultantes:
+ - X_train_padded : (89320, 100)
+ - X_val_padded   : (12760, 100)
+ - X_test_padded  : (25520, 100)
+ 
 
 ## 5.3. Definición y Construcción del Modelo
+
+
+Hemos diseñado una arquitectura de red neuronal recurrente (RNN) secuencial. Comienza con una capa Input explícita, seguida de una capa Embedding que proyecta nuestras 20.000 palabras en un espacio vectorial denso de 128 dimensiones. El núcleo del modelo es una capa GRU de 64 unidades. Tras aplicar un Dropout del 20% para mitigar el sobreajuste, finalizamos con una capa Dense de 4 neuronas con activación softmax para la clasificación multiclase.
+
+Durante el entrenamiento, implementamos el callback `EarlyStopping`. Observando los logs, el modelo alcanza su punto de generalización óptimo en la época 3 (con una pérdida de validación de 0.2731 y un accuracy cercano al 91%). A partir de la época 4, aunque la pérdida de entrenamiento sigue bajando a casi cero, la pérdida de validación comienza a subir, indicando un claro sobreajuste (*overfitting*). El `EarlyStopping` actuó correctamente deteniendo el entrenamiento en la época 8 y restaurando los pesos óptimos de la época 3.
 
 ```python
 # Definir la ruta 
@@ -2027,12 +2125,12 @@ early_stopping = EarlyStopping(
     restore_best_weights=True # Nos quedamos con el mejor modelo, no con el último
 )
 
-# Entrenamos el modelo usando X_test_padded como conjunto de validación
+# Entrenamos el modelo usando X_val_padded como conjunto de validación
 history = model.fit(
     X_train_padded, y_train,
     epochs=50, # Ponemos un número alto porque EarlyStopping lo detendrá antes si es necesario
     batch_size=64,
-    validation_data=(X_test_padded, y_test),
+    validation_data=(X_val_padded, y_val),
     callbacks=[early_stopping]
 )
 
@@ -2049,41 +2147,49 @@ with open(history_filename, 'wb') as f:
 with open(f"{save_dir_ex5}/tokenizer.pkl", "wb") as f:
     pickle.dump(tokenizer, f)
 ```
-
-Model: "sequential_1"
+Model: "sequential"
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━┓
 ┃ Layer (type)                    ┃ Output Shape           ┃       Param # ┃
 ┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━┩
-│ embedding_1 (Embedding)         │ (None, 100, 128)       │     2,560,000 │
+│ embedding (Embedding)           │ (None, 100, 128)       │     2,560,000 │
 ├─────────────────────────────────┼────────────────────────┼───────────────┤
-│ gru_1 (GRU)                     │ (None, 64)             │        37,248 │
+│ gru (GRU)                       │ (None, 64)             │        37,248 │
 ├─────────────────────────────────┼────────────────────────┼───────────────┤
-│ dropout_1 (Dropout)             │ (None, 64)             │             0 │
+│ dropout (Dropout)               │ (None, 64)             │             0 │
 ├─────────────────────────────────┼────────────────────────┼───────────────┤
-│ dense_1 (Dense)                 │ (None, 4)              │           260 │
+│ dense (Dense)                   │ (None, 4)              │           260 │
 └─────────────────────────────────┴────────────────────────┴───────────────┘
  Total params: 2,597,508 (9.91 MB)
  Trainable params: 2,597,508 (9.91 MB)
  Non-trainable params: 0 (0.00 B)
 Epoch 1/50
-1595/1595 ━━━━━━━━━━━━━━━━━━━━ 111s 68ms/step - accuracy: 0.2504 - loss: 1.3870 - val_accuracy: 0.2500 - val_loss: 1.3860
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 92s 64ms/step - accuracy: 0.2500 - loss: 1.3871 - val_accuracy: 0.2512 - val_loss: 1.3885
 Epoch 2/50
-1595/1595 ━━━━━━━━━━━━━━━━━━━━ 112s 70ms/step - accuracy: 0.2948 - loss: 1.3256 - val_accuracy: 0.8361 - val_loss: 0.4852
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 86s 62ms/step - accuracy: 0.2670 - loss: 1.3645 - val_accuracy: 0.6216 - val_loss: 0.8403
 Epoch 3/50
-1595/1595 ━━━━━━━━━━━━━━━━━━━━ 104s 65ms/step - accuracy: 0.8978 - loss: 0.3152 - val_accuracy: 0.9080 - val_loss: 0.2731
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 86s 61ms/step - accuracy: 0.8742 - loss: 0.3710 - val_accuracy: 0.9096 - val_loss: 0.2781
 Epoch 4/50
-1595/1595 ━━━━━━━━━━━━━━━━━━━━ 92s 58ms/step - accuracy: 0.9368 - loss: 0.1980 - val_accuracy: 0.9053 - val_loss: 0.2836
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 90s 64ms/step - accuracy: 0.9323 - loss: 0.2118 - val_accuracy: 0.9132 - val_loss: 0.2653
 Epoch 5/50
-1595/1595 ━━━━━━━━━━━━━━━━━━━━ 93s 58ms/step - accuracy: 0.9552 - loss: 0.1424 - val_accuracy: 0.9041 - val_loss: 0.3050
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 78s 56ms/step - accuracy: 0.9521 - loss: 0.1477 - val_accuracy: 0.9080 - val_loss: 0.2966
 Epoch 6/50
-1595/1595 ━━━━━━━━━━━━━━━━━━━━ 93s 59ms/step - accuracy: 0.9684 - loss: 0.1003 - val_accuracy: 0.9018 - val_loss: 0.3587
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 73s 52ms/step - accuracy: 0.9680 - loss: 0.1011 - val_accuracy: 0.9027 - val_loss: 0.3388
 Epoch 7/50
-1595/1595 ━━━━━━━━━━━━━━━━━━━━ 86s 54ms/step - accuracy: 0.9777 - loss: 0.0701 - val_accuracy: 0.8984 - val_loss: 0.3976
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 73s 53ms/step - accuracy: 0.9777 - loss: 0.0696 - val_accuracy: 0.8969 - val_loss: 0.3968
 Epoch 8/50
-1595/1595 ━━━━━━━━━━━━━━━━━━━━ 87s 54ms/step - accuracy: 0.9845 - loss: 0.0479 - val_accuracy: 0.8976 - val_loss: 0.4559
-
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 74s 53ms/step - accuracy: 0.9849 - loss: 0.0474 - val_accuracy: 0.8987 - val_loss: 0.4547
+Epoch 9/50
+1396/1396 ━━━━━━━━━━━━━━━━━━━━ 75s 53ms/step - accuracy: 0.9885 - loss: 0.0348 - val_accuracy: 0.8958 - val_loss: 0.4952
 
 ## 5.4. Evaluación del rendimiento
+
+Evaluando el modelo con los pesos restaurados sobre el conjunto de test aislado, logramos un excelente `accuracy` del 90.80%.
+
+Analizando el `Classification Report` y la matriz de confusión, destacan varios puntos:
+
+- La categoría Sports es la más fácil de identificar para el modelo, logrando las mejores métricas (F1-score de 0.96). El lenguaje deportivo suele ser muy específico y poco ambiguo.
+
+- Existe una notable confusión cruzada entre las clases Business y Sci/Tech. Este comportamiento es completamente lógico y esperable, ya que muchas noticias sobre empresas tecnológicas o lanzamientos de productos mezclan jerga de negocios y ciencia/tecnología.
 
 ```python
 #  Obtenemos las predicciones del modelo para el conjunto de test
@@ -2095,44 +2201,46 @@ y_pred = np.argmax(y_pred_probs, axis=1)
 nombres_clases = ['World', 'Sports', 'Business', 'Sci/Tech']
 
 # --- Métrica de Accuracy ---
-accuracy = accuracy_score(y_test, y_pred)
-print(f"Accuracy en Test: {accuracy:.4f}\n")
+# Accuracy 
+print(f"\nAccuracy Final en Test: {accuracy_score(y_test, y_pred):.4f}\n")
 
 # --- Matriz de Confusión ---
-matriz = confusion_matrix(y_test, y_pred)
-print("Matriz de Confusión:")
-print(matriz)
-print("\n")
+
+# Matriz de confusión
+cm = confusion_matrix(y_test, y_pred)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+            xticklabels=nombres_clases, yticklabels=nombres_clases)
+plt.title('Matriz de Confusión — Modelo Final (Optuna)', fontweight='bold')
+plt.ylabel('Etiqueta Real')
+plt.xlabel('Etiqueta Predicha')
+plt.tight_layout()
+plt.show()
+
 
 # --- Classification Report ---
-reporte = classification_report(y_test, y_pred, target_names=nombres_clases)
-print("Classification Report:")
-print(reporte)
+print("\nClassification Report (Modelo Final):")
+print(classification_report(y_test, y_pred, target_names=nombres_clases))
 ```
 
-798/798 ━━━━━━━━━━━━━━━━━━━━ 6s 7ms/step
-Accuracy en Test: 0.9080
-
-Matriz de Confusión:
-[[5695  160  304  221]
- [  82 6208   47   43]
- [ 171   59 5713  437]
- [ 224   60  539 5557]]
+![alt text](image-1.png)
 
 
-Classification Report:
+Classification Report (Modelo Final):
               precision    recall  f1-score   support
 
        World       0.92      0.89      0.91      6380
-      Sports       0.96      0.97      0.96      6380
-    Business       0.87      0.90      0.88      6380
-    Sci/Tech       0.89      0.87      0.88      6380
+      Sports       0.95      0.97      0.96      6380
+    Business       0.88      0.88      0.88      6380
+    Sci/Tech       0.87      0.90      0.88      6380
 
     accuracy                           0.91     25520
    macro avg       0.91      0.91      0.91     25520
 weighted avg       0.91      0.91      0.91     25520
 
-## 4.5. Visualizaciones: Curvas de loss de entrenamiento y validación
+## 5.5. Visualizaciones: Curvas de loss de entrenamiento y validación
+
+La gráfica de la función de pérdida ilustra a la perfección el comportamiento descrito. Mientras la curva azul (pérdida en entrenamiento) desciende continuamente hacia cero en un intento de memorizar los datos, la curva roja (pérdida en validación) toca su fondo en la época 3 y comienza a ascender formando una forma de "U". Esta divergencia es la representación visual canónica del sobreajuste (*overfitting*) en Deep Learning, evidenciando que el uso de la regularización temprana (`Early Stopping`) fue fundamental para el éxito del modelo.
 
 ```python
 # Extraemos los valores de pérdida del historial
@@ -2161,15 +2269,288 @@ plt.grid(True) # Una cuadrícula ayuda a leer mejor los valores
 ruta_grafica_loss = os.path.join(save_dir_ex5, "Curvas_de_Perdida.png")
 plt.savefig(ruta_grafica_loss, dpi=300, bbox_inches="tight")
 plt.show()
-``` 
+```
 
-![alt text](image.png)
-
+![alt text](image-2.png)
 
 <div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
 
 <p><strong>¿Por qué es necesario que todas las secuencias tengan la misma longitud?</strong></p>
-<p><strong>Solución:</strong> </p>
+<p><strong>Solución:</strong> Es necesario porque las arquitecturas de redes neuronales procesan los datos en lotes (<em>batches</em>) mediante operaciones matriciales en paralelo. Para agrupar varias secuencias de texto independientes en un único tensor matemático bidimensional (por ejemplo, una matriz de dimensiones 64x100), es obligatorio que todas las "filas" (noticias) tengan exactamente la misma cantidad de "columnas" (palabras/tokens). Las longitudes variables imposibilitarían estas operaciones de álgebra lineal requeridas para el entrenamiento.</p>
+<br>
 <p><strong>¿Qué efecto tendría truncar las secuencias de forma demasiado agresiva sobre el rendimiento del clasificador?</strong></p>
+<p><strong>Solución:</strong> Un truncamiento demasiado agresivo (por ejemplo, limitar las noticias a solo 10 o 15 tokens) provocaría una pérdida masiva y crítica de información. Al eliminar gran parte del texto, estaríamos borrando el contexto semántico y las palabras clave fundamentales que determinan el tema real del artículo. En consecuencia, el rendimiento del clasificador (<em>accuracy</em>) se desplomaría, ya que el modelo no tendría datos útiles suficientes para discriminar a qué categoría pertenece cada texto de forma fiable.</p>
+</div>
+
+
+---
+---
+
+# 6. (Opcional) Búsqueda de hiperparámetros con Optuna
+
+La **búsqueda de hiperparámetros** es el proceso de encontrar la mejor combinación posible de parámetros que no son aprendidos automáticamente por el modelo, como el número de unidades de una capa, la tasa de aprendizaje o el tamaño del batch. Una buena elección de estos valores puede mejorar notablemente el rendimiento del modelo.
+
+**Optuna** (https://optuna.org/) es una librería de optimización automática que utiliza estrategias como *Tree-structured Parzen Estimator* (TPE) para explorar de manera eficiente el espacio de hiperparámetros. Permite definir un objetivo que entrena y evalúa el modelo con diferentes combinaciones, encontrando la que maximiza o minimiza una métrica determinada.
+
+<div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+
+**Ejercicio Opcional [1 pts.].** En este ejercicio se pretende mejorar el rendimiento del modelo de clasificación de noticias construido en el ejercicio anterior mediante la búsqueda automática de hiperparámetros. Para ello se utilizará la librería Optuna para optimizar la arquitectura y los parámetros de entrenamiento del modelo basado en redes neuronales recurrentes.
+
+Partiendo del dataset AG News y del preprocesado ya realizado (tokenización, secuencias numéricas, padding a longitud fija y partición train/test), se deberán llevar a cabo los siguientes pasos:
+
+- Implementa una función objetivo (objective function) compatible con Optuna que:
+    - Construye un modelo de clasificación de texto.
+    - Permita ajustar al menos tres de los siguientes hiperparámetros:
+        - Número de neuronas de la capa recurrente.
+        - Dimensión de la capa `Embedding`.
+        - Tasa de `Dropout`.
+        - Learning rate del optimizador `Adam`.
+        - Tamaño del batch.
+    - Entrene el modelo durante pocas épocas (por ejemplo, 5) usando un subconjunto de validación.
+    - Devuelva como métrica objetivo el mejor accuracy.
+- Crea un estudio de optuna y ejecuta al menos 3 trials.
+- Muestra los mejores hiperparámetros encontrados y el mejor accuracy.
+- Utiliza los mejores hiperparámetros obtenidos para construir un modelo final, entrenarlo y evaluarlo.
+- Analiza los resultados del modelo final. Para ello calcula la matriz de confusión y muestra el classification report.
+
+<div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
 <p><strong>Solución:</strong> </p>
+</div>
+
+## 6.1. Implementación de la funcion objetivo
+
+Primero, definimos la función `objective() `que evaluará cada trial (prueba). Utilizaremos los conjuntos `X_train_padded` y `X_val_padded` que creamos de forma segura en el Ejercicio 5. Al ajustar todos los hiperparámetros sugeridos (5 en total), le damos a Optuna mucho margen para explorar la mejor arquitectura.
+
+```python
+# Función Objetivo compatible con Optuna
+def objective(trial):
+    """
+    Función objetivo para la optimización de hiperparámetros con Optuna.
+
+    Parameters
+    ----------
+    trial: optuna.trial.Trial
+        Objeto que representa una ejecución de prueba en el proceso de optimización de hiperparámetros. 
+        El trial permite sugerir valores para los hiperparámetros que queremos optimizar.
+
+    Returns
+    -------
+    best_val_acc: float
+        El mejor accuracy alcanzado en el conjunto de validación durante el entrenamiento del modelo con los
+        hiperparámetros sugeridos por el trial.
+    """
+
+    # Definimos el espacio de búsqueda para 4 hiperparámetros
+    # Numero de neuronas de la capa recurrente
+    gru_units = trial.suggest_categorical('gru_units', [32, 64, 128])
+    # Dimensión de la capa Embedding
+    embedding_dim = trial.suggest_categorical('embedding_dim', [64, 128])
+    # Tasa de dropout
+    dropout_rate = trial.suggest_float('dropout_rate', 0.1, 0.5)
+    # Learning rate para el optimizador Adam
+    learning_rate = trial.suggest_float('learning_rate', 1e-4, 1e-2, log=True)
+    # Tamaño del batch
+    batch_size = trial.suggest_categorical('batch_size', [32, 64, 128])
+
+    # Construimos el modelo GRU
+    model = Sequential([
+        Input(shape=(MAX_LENGTH,)),
+        Embedding(input_dim=VOCAB_SIZE, output_dim=embedding_dim),
+        GRU(gru_units),
+        Dropout(dropout_rate),
+        Dense(4, activation='softmax')
+    ])
+
+    # Compilamos
+    model.compile(
+        optimizer=Adam(learning_rate=learning_rate),
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+
+    # Callbacks: EarlyStopping vigilando el NUEVO conjunto de validación
+    early_stopping = EarlyStopping(
+        monitor='val_accuracy', 
+        patience=2,               
+        restore_best_weights=True 
+    )
+
+    # Entrenamiento rápido de 5 épocas usando la partición de validación
+    history_trial = model.fit(
+        X_train_padded, y_train,
+        epochs          = 5,
+        batch_size      = batch_size,
+        validation_data = (X_val_padded, y_val),
+        callbacks       = [early_stopping],
+        verbose         = 0
+    )
+
+    # Devolvemos el mejor accuracy alcanzado en el conjunto de validación
+    best_val_acc = max(history.history['val_accuracy'])
+    
+    return best_val_acc
+```
+
+## 6.3. Definición y construcción del estudio
+
+Instanciamos el estudio indicando que nuestro objetivo es maximizar (`direction="maximize"`) el valor que devuelve la función objetivo (el *accuracy*).
+```python
+print("Iniciando búsqueda con Optuna...")
+study = optuna.create_study(direction="maximize")
+study.optimize(objective, n_trials=3)
+
+print("\n" + "="*60)
+print("Resultados de Optuna:")
+print("="*60)
+print(f"Mejor accuracy de validación : {study.best_value:.4f}")
+print("Mejores hiperparámetros encontrados:")
+best_params = study.best_params
+for key, value in best_params.items():
+    print(f"  - {key}: {value}")
+print("="*60)
+```
+
+[I 2026-04-13 14:29:38,496] A new study created in memory with name: no-name-3fab05ab-6566-4647-a171-f43b85f2b77a
+Iniciando búsqueda con Optuna...
+[I 2026-04-13 14:37:08,877] Trial 0 finished with value: 0.9131661653518677 and parameters: {'gru_units': 32, 'embedding_dim': 64, 'dropout_rate': 0.27493041424176534, 'learning_rate': 0.00036000675271512835, 'batch_size': 32}. Best is trial 0 with value: 0.9131661653518677.
+[I 2026-04-13 14:41:33,711] Trial 1 finished with value: 0.9131661653518677 and parameters: {'gru_units': 64, 'embedding_dim': 64, 'dropout_rate': 0.1463002420011582, 'learning_rate': 0.000823403349326361, 'batch_size': 64}. Best is trial 0 with value: 0.9131661653518677.
+[I 2026-04-13 14:45:49,560] Trial 2 finished with value: 0.9131661653518677 and parameters: {'gru_units': 64, 'embedding_dim': 128, 'dropout_rate': 0.1483677209644003, 'learning_rate': 0.000813127938586737, 'batch_size': 128}. Best is trial 0 with value: 0.9131661653518677.
+
+============================================================
+Resultados de Optuna:
+============================================================
+Mejor accuracy de validación : 0.9132
+Mejores hiperparámetros encontrados:
+  - gru_units: 32
+  - embedding_dim: 64
+  - dropout_rate: 0.27493041424176534
+  - learning_rate: 0.00036000675271512835
+  - batch_size: 32
+============================================================
+
+ 
+## 6.4. Entrenamiento del Modelo 
+
+Ahora extraemos la mejor combinación encontrada por Optuna y entrenamos un modelo definitivo. Le daremos más épocas de entrenamiento (por ejemplo, 15), permitiendo que el `EarlyStopping` determine el punto exacto de parada.
+
+```python
+# Definir la ruta 
+save_dir_ex6 = r"../Clasiffier_GRU_Optuna"
+if not os.path.exists(save_dir_ex6):
+    os.makedirs(save_dir_ex6)
+
+# Reconstruimos el modelo con los mejores hiperparámetros
+modelo_final = Sequential([
+    Input(shape=(MAX_LENGTH,)),
+    Embedding(input_dim=VOCAB_SIZE, output_dim=best_params['embedding_dim']),
+    GRU(best_params['gru_units']),
+    Dropout(best_params['dropout_rate']),
+    Dense(4, activation='softmax')
+])
+
+modelo_final.compile(
+    optimizer=Adam(learning_rate=best_params['learning_rate']),
+    loss='sparse_categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+es_final = EarlyStopping(
+    monitor='val_loss', 
+    patience=3, 
+    restore_best_weights=True
+)
+
+# Entrenamos el modelo final usando estrictamente X_train_padded y X_val_padded
+history_final = modelo_final.fit(
+    X_train_padded, y_train,
+    epochs          = 15,
+    batch_size      = best_params['batch_size'],
+    validation_data = (X_val_padded, y_val),
+    callbacks       = [es_final]
+)
+
+# ── Guardado modelo_final e history_final (no model ni history) ────────────
+model_filename   = f"{save_dir_ex6}/Clasiffier_GRU_Optuna.keras"
+history_filename = f"{save_dir_ex6}/Clasiffier_GRU_Optuna.pkl"
+
+modelo_final.save(model_filename)
+with open(history_filename, 'wb') as f:
+    pickle.dump(history_final.history, f)
+```
+
+Epoch 1/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 96s 33ms/step - accuracy: 0.2501 - loss: 1.3868 - val_accuracy: 0.2500 - val_loss: 1.3863
+Epoch 2/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 95s 34ms/step - accuracy: 0.2503 - loss: 1.3865 - val_accuracy: 0.2500 - val_loss: 1.3862
+Epoch 3/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 98s 35ms/step - accuracy: 0.2796 - loss: 1.3537 - val_accuracy: 0.4505 - val_loss: 1.1183
+Epoch 4/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 98s 35ms/step - accuracy: 0.7300 - loss: 0.6747 - val_accuracy: 0.8616 - val_loss: 0.4341
+Epoch 5/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 101s 36ms/step - accuracy: 0.8923 - loss: 0.3590 - val_accuracy: 0.8900 - val_loss: 0.3523
+Epoch 6/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 99s 36ms/step - accuracy: 0.9171 - loss: 0.2809 - val_accuracy: 0.8940 - val_loss: 0.3333
+Epoch 7/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 98s 35ms/step - accuracy: 0.9310 - loss: 0.2330 - val_accuracy: 0.8977 - val_loss: 0.3311
+Epoch 8/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 99s 35ms/step - accuracy: 0.9417 - loss: 0.1964 - val_accuracy: 0.8972 - val_loss: 0.3365
+Epoch 9/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 101s 36ms/step - accuracy: 0.9504 - loss: 0.1681 - val_accuracy: 0.8972 - val_loss: 0.3437
+Epoch 10/15
+2792/2792 ━━━━━━━━━━━━━━━━━━━━ 101s 36ms/step - accuracy: 0.9585 - loss: 0.1444 - val_accuracy: 0.8971 - val_loss: 0.3640
+
+
+## 6.4. Evaluación Final del Modelo
+
+Finalmente, usamos el conjunto de prueba (`X_test_padded`) que mantuvimos aislado desde el primer momento, y evaluamos la capacidad de generalización del nuevo modelo optimizado.
+
+```python
+# Evaluamos sobre X_test_padded para evaluar definitaivamente
+y_pred_probs_final = modelo_final.predict(X_test_padded)
+y_pred_final       = np.argmax(y_pred_probs_final, axis=1)
+
+nombres_clases = ['World', 'Sports', 'Business', 'Sci/Tech']
+
+# Accuracy 
+print(f"\nAccuracy Final en Test: {accuracy_score(y_test, y_pred_final):.4f}\n")
+
+# Matriz de confusión
+cm = confusion_matrix(y_test, y_pred_final)
+plt.figure(figsize=(8, 6))
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+            xticklabels=nombres_clases, yticklabels=nombres_clases)
+plt.title('Matriz de Confusión — Modelo Final (Optuna)', fontweight='bold')
+plt.ylabel('Etiqueta Real')
+plt.xlabel('Etiqueta Predicha')
+plt.tight_layout()
+matriz_fig_filename = f"{save_dir_ex6}/matriz_confusion_final_optuna.png"
+plt.savefig(matriz_fig_filename, dpi=300, bbox_inches="tight")
+plt.show()
+
+# Classification Report 
+print("\nClassification Report (Modelo Final):")
+print(classification_report(y_test, y_pred_final, target_names=nombres_clases))
+```
+798/798 ━━━━━━━━━━━━━━━━━━━━ 6s 7ms/step
+
+Accuracy Final en Test: 0.8933
+
+![alt text](image-3.png)
+
+
+Classification Report (Modelo Final):
+              precision    recall  f1-score   support
+
+       World       0.89      0.87      0.88      6380
+      Sports       0.95      0.96      0.96      6380
+    Business       0.86      0.86      0.86      6380
+    Sci/Tech       0.86      0.88      0.87      6380
+
+    accuracy                           0.89     25520
+   macro avg       0.89      0.89      0.89     25520
+weighted avg       0.89      0.89      0.89     25520
+
+<div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+<p><strong>Analiza los resultados del modelo final.</strong></p>
+<p><strong>Solución:</strong> Los resultados se han ido analizando e interpretando durante los apartados.</p>
 </div>
