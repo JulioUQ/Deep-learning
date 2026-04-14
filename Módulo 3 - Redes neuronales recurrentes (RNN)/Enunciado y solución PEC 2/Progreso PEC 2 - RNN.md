@@ -23,6 +23,44 @@
 - Algunos ejercicios pueden suponer varios minutos de ejecución, por lo que la entrega debe hacerse en **formato notebook** y en **formato html**, donde se vea el código, los resultados y comentarios de cada ejercicio. Se puede exportar el notebook a HTML desde el menú File $\to$ Download as $\to$ HTML.
 - Existe un tipo de celda especial para albergar texto. Este tipo de celda os será muy útil para responder a las diferentes preguntas teóricas planteadas a lo largo de la actividad. Para cambiar el tipo de celda a este tipo, en el menú: Cell $\to$ Cell Type $\to$ Markdown.
 
+# ANEXO I. Resumen de la práctica
+
+### 1. Contexto y Preparación de los Datos (Preprocesamiento)
+
+La práctica se centra en el potencial de las **Redes Neuronales Recurrentes (RNN)** y sus variantes (LSTM, GRU) para capturar dependencias en datos secuenciales, aplicándose tanto a series temporales meteorológicas y energéticas como al procesamiento de lenguaje natural. 
+
+En el ámbito de las series temporales, el trabajo comenzó con el dataset **ETTh1**, orientado a predecir la temperatura del aceite (**OT**) en transformadores. El preprocesamiento fue crítico para transformar flujos continuos en un esquema de aprendizaje supervisado. Mediante la técnica de **ventana deslizante (*sliding window*)**, se estructuraron los datos en pares de entrada-salida, permitiendo que el pasado reciente actúe como característica predictora. Se determinó que un tamaño de ventana de **24 horas** es óptimo, capturando el ciclo diario sin introducir el ruido observado en ventanas de 48 horas. Para garantizar la convergencia, los datos se normalizaron en un rango [0, 1] usando `MinMaxScaler`, ajustando el escalador exclusivamente con el conjunto de entrenamiento (70%) para evitar el *data leakage* hacia la validación (15%) y el test (15%).
+
+Para el problema de clasificación de texto con el dataset **AG News**, el preprocesamiento exigió una estandarización distinta. Los textos se tokenizaron limitando el vocabulario a las 20,000 palabras más frecuentes. Dado que las redes neuronales requieren entradas matriciales de tamaño fijo para el procesamiento en lotes (*batches*), se aplicó **padding y truncamiento** a una longitud máxima de 100 tokens, asegurando que cada noticia conservara el contexto semántico necesario para su categorización.
+
+### 2. Modelado y Estrategias de Entrenamiento
+
+El entrenamiento evolucionó desde arquitecturas básicas hasta modelos de alta complejidad. La **SimpleRNN** inicial sirvió para establecer una línea base, evidenciando que los parámetros se comparten a lo largo del tiempo, lo que mantiene la complejidad del modelo independientemente de la ventana temporal. Posteriormente, se implementaron celdas **LSTM y GRU**, diseñadas para mitigar el desvanecimiento del gradiente mediante mecanismos de puertas lógicas que controlan el flujo de información a largo plazo.
+
+Una distinción técnica relevante surgió al comparar marcos de trabajo: mientras que en **TensorFlow/Keras** el entrenamiento se gestionó mediante la API de alto nivel, en **PyTorch** se implementó un **bucle de entrenamiento manual**. Esta flexibilidad permitió observar que, al eliminar las restricciones de parada temprana y permitir un entrenamiento más exhaustivo (200 épocas), la LSTM de PyTorch logró superar el ligero *underfitting* mostrado por su contraparte en Keras, la cual se veía penalizada por la combinación de *Dropout* y *EarlyStopping* prematuro.
+
+En escenarios más avanzados, se integró un **mecanismo de atención (Self-Attention)** bajo una API funcional para abordar la **predicción multistep**. Aquí, el modelo no solo recuerda el pasado, sino que intenta discriminar qué instantes de la ventana de entrada son cruciales para proyectar un horizonte de 10 horas futuras simultáneamente. Finalmente, el uso de **Optuna** automatizó la búsqueda de hiperparámetros (unidades, tasa de aprendizaje, *dropout*), optimizando la arquitectura para la clasificación de noticias.
+
+### 3. Análisis de Resultados y Comparativa de Arquitecturas
+
+La evaluación de los modelos reveló una jerarquía clara de rendimiento marcada por el principio de parsimonia. En la predicción a un solo paso, la **SimpleRNN y la GRU demostraron ser las opciones más eficientes**. Sorprendentemente, para una ventana de 24 horas, la SimpleRNN logró un error inferior a medio grado Celsius (MAE de 0.46), compitiendo directamente con arquitecturas mucho más pesadas. 
+
+La comparativa final en el conjunto de test posicionó a la **LSTM de PyTorch como el modelo más preciso**, gracias a su régimen de entrenamiento extendido. Sin embargo, se observó que la **LSTM de Keras fue la menos competitiva**, lo que sugiere que introducir excesiva complejidad y regularización en problemas de corto alcance puede degradar el rendimiento.
+
+En la **predicción multistep**, el error se incrementó notablemente (MAE de 1.64). Esta degradación es inherente a la tarea, ya que predecir 10 horas simultáneas propaga una incertidumbre mayor que la predicción inmediata. En la clasificación de texto, el modelo alcanzó un **accuracy del 91%**, destacando una precisión casi perfecta en noticias deportivas (F1-score 0.96) y una confusión lógica entre las categorías de *Business* y *Sci/Tech*, debido al solapamiento léxico entre ambas temáticas.
+
+### 4. Visualización y Diagnóstico del Comportamiento
+
+Las visualizaciones fueron fundamentales para diagnosticar el comportamiento interno de las redes:
+
+* **Curvas de Loss:** Confirmaron que el uso de *EarlyStopping* y *ReduceLROnPlateau* gestionó correctamente el entrenamiento, evitando el sobreajuste. En los modelos de texto, la divergencia entre la pérdida de entrenamiento y validación tras la tercera época marcó el punto exacto de generalización óptima.
+* **El Efecto de Retraso (*Lag*):** Los gráficos de valores reales frente a predichos revelaron que los modelos tienden a apoyarse en una "predicción ingenua", reaccionando a los cambios bruscos con un paso de retraso. Además, se observó una tendencia a suavizar los picos y valles, actuando como un filtro de media móvil.
+* **Degradación del Horizonte:** El análisis del RMSE mostró que la precisión se mantiene estable durante las primeras 4-5 horas, pero el error escala rápidamente a partir de la quinta hora, indicando el límite de fiabilidad del pronóstico.
+* **Interpretación de la Atención:** El mapa de pesos de atención resultó ser casi uniforme. Esto indica que, para este volumen de datos y arquitectura, la red optó por promediar globalmente la ventana de 48 horas en lugar de centrarse en eventos específicos, un fenómeno de "difuminación de la información" común cuando la LSTM ya ha pre-procesado la secuencia.
+
+En conclusión, la práctica demuestra que, si bien las arquitecturas avanzadas ofrecen soluciones a problemas complejos de largo plazo, para predicciones inmediatas con patrones cíclicos claros, la eficiencia de los modelos más simples o un entrenamiento exhaustivo en modelos complejos son las estrategias que mejor garantizan la precisión operativa.
+
+
 # 0. Contexto y carga de librerías
 
 En esta práctica exploraremos el uso de **Redes Neuronales Recurrentes (RNN)** y sus variantes modernas (LSTM, GRU) aplicadas a diferentes problemas de series temporales y procesamiento de legunaje natural. Las RNN son especialmente útiles cuando los datos presentan una **estructura secuencial**, ya que permiten capturar dependencias a lo largo del tiempo o del texto.
@@ -2386,7 +2424,7 @@ def objective(trial):
     )
 
     # Devolvemos el mejor accuracy alcanzado en el conjunto de validación
-    best_val_acc = max(history.history['val_accuracy'])
+    best_val_acc = max(history_trial.history['val_accuracy'])
     
     return best_val_acc
 ```
@@ -2394,6 +2432,7 @@ def objective(trial):
 ## 6.3. Definición y construcción del estudio
 
 Instanciamos el estudio indicando que nuestro objetivo es maximizar (`direction="maximize"`) el valor que devuelve la función objetivo (el *accuracy*).
+
 ```python
 print("Iniciando búsqueda con Optuna...")
 study = optuna.create_study(direction="maximize")
@@ -2478,27 +2517,16 @@ with open(history_filename, 'wb') as f:
     pickle.dump(history_final.history, f)
 ```
 
-Epoch 1/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 96s 33ms/step - accuracy: 0.2501 - loss: 1.3868 - val_accuracy: 0.2500 - val_loss: 1.3863
-Epoch 2/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 95s 34ms/step - accuracy: 0.2503 - loss: 1.3865 - val_accuracy: 0.2500 - val_loss: 1.3862
-Epoch 3/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 98s 35ms/step - accuracy: 0.2796 - loss: 1.3537 - val_accuracy: 0.4505 - val_loss: 1.1183
-Epoch 4/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 98s 35ms/step - accuracy: 0.7300 - loss: 0.6747 - val_accuracy: 0.8616 - val_loss: 0.4341
-Epoch 5/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 101s 36ms/step - accuracy: 0.8923 - loss: 0.3590 - val_accuracy: 0.8900 - val_loss: 0.3523
-Epoch 6/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 99s 36ms/step - accuracy: 0.9171 - loss: 0.2809 - val_accuracy: 0.8940 - val_loss: 0.3333
-Epoch 7/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 98s 35ms/step - accuracy: 0.9310 - loss: 0.2330 - val_accuracy: 0.8977 - val_loss: 0.3311
-Epoch 8/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 99s 35ms/step - accuracy: 0.9417 - loss: 0.1964 - val_accuracy: 0.8972 - val_loss: 0.3365
-Epoch 9/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 101s 36ms/step - accuracy: 0.9504 - loss: 0.1681 - val_accuracy: 0.8972 - val_loss: 0.3437
-Epoch 10/15
-2792/2792 ━━━━━━━━━━━━━━━━━━━━ 101s 36ms/step - accuracy: 0.9585 - loss: 0.1444 - val_accuracy: 0.8971 - val_loss: 0.3640
-
+Epoch 1/5
+698/698 ━━━━━━━━━━━━━━━━━━━━ 85s 119ms/step - accuracy: 0.2528 - loss: 1.3878 - val_accuracy: 0.2509 - val_loss: 1.3865
+Epoch 2/5
+698/698 ━━━━━━━━━━━━━━━━━━━━ 81s 116ms/step - accuracy: 0.4429 - loss: 1.0977 - val_accuracy: 0.8829 - val_loss: 0.3475
+Epoch 3/5
+698/698 ━━━━━━━━━━━━━━━━━━━━ 83s 119ms/step - accuracy: 0.9053 - loss: 0.2900 - val_accuracy: 0.9094 - val_loss: 0.2660
+Epoch 4/5
+698/698 ━━━━━━━━━━━━━━━━━━━━ 82s 117ms/step - accuracy: 0.9412 - loss: 0.1822 - val_accuracy: 0.9107 - val_loss: 0.2830
+Epoch 5/5
+698/698 ━━━━━━━━━━━━━━━━━━━━ 82s 117ms/step - accuracy: 0.9593 - loss: 0.1252 - val_accuracy: 0.9025 - val_loss: 0.3206
 
 ## 6.4. Evaluación Final del Modelo
 
@@ -2531,24 +2559,24 @@ plt.show()
 print("\nClassification Report (Modelo Final):")
 print(classification_report(y_test, y_pred_final, target_names=nombres_clases))
 ```
-798/798 ━━━━━━━━━━━━━━━━━━━━ 6s 7ms/step
+798/798 ━━━━━━━━━━━━━━━━━━━━ 9s 12ms/step
 
-Accuracy Final en Test: 0.8933
 
-![alt text](image-3.png)
+Accuracy Final en Test: 0.9062
 
 
 Classification Report (Modelo Final):
               precision    recall  f1-score   support
 
-       World       0.89      0.87      0.88      6380
-      Sports       0.95      0.96      0.96      6380
-    Business       0.86      0.86      0.86      6380
-    Sci/Tech       0.86      0.88      0.87      6380
+       World       0.92      0.89      0.91      6380
+      Sports       0.95      0.97      0.96      6380
+    Business       0.90      0.85      0.87      6380
+    Sci/Tech       0.85      0.91      0.88      6380
 
-    accuracy                           0.89     25520
-   macro avg       0.89      0.89      0.89     25520
-weighted avg       0.89      0.89      0.89     25520
+    accuracy                           0.91     25520
+   macro avg       0.91      0.91      0.91     25520
+weighted avg       0.91      0.91      0.91     25520
+
 
 <div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
 <p><strong>Analiza los resultados del modelo final.</strong></p>
