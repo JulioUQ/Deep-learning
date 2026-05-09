@@ -29,8 +29,18 @@ A continuación, estudiaremos los distintos componentes que conforman esta arqui
 
 ## Contenidos y recursos
 
+- Aston Zhang, Zachary C. Lipton, Mu Li y Alexander J. Smola. (2020). [*Dive into Deep Learning*](https://d2l.ai/)
+  - Capítulo 11
+
+- Géron, Aurélien. (2019). [*Hands-on Machine Learning with Scikit-Learn, Keras and TensorFlow* (2.ª edición). O’Reilly Media](https://discovery.biblioteca.uoc.edu/discovery/fulldisplay?context=L&vid=34CSUC_UOC:VU1&search_scope=MyInst_and_CI&isFrbr=true&tab=Everything&docid=alma991000734279006712&lang=es)
+  - Capítulo 16
+
+[¿Cómo se lee un libro digital de ProQuest Ebook Central?](https://biblioteca.uoc.edu/export/sites/biblio/.galleries/documents/MANUAL-DESCARREGA-PROQUEST-EBOOK_ESP_2020.pdf)
+
+### Recursos adicionales
+
+- Solución PEC3 - Transformers - 20251
+
 ### Bibliografía básica
 
-- M6 - Transformadores
-
-Encontraréis los recursos en el apartado **Recursos de aprendizaje M4**.
+- M6 - Transformadores (En la carpeta Teoría)
