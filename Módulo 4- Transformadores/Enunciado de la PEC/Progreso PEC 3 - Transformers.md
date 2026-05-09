@@ -17,6 +17,8 @@ Vamos a trabajar con transformers, arquitecturas grandes, etc. Será necesaria l
 * Te parece largo? Echa un vistazo a los tiempos de entrenamiento de LLMs (interesante Megatron-Turing): https://en.wikipedia.org/wiki/List_of_large_language_models
 
 ```python
+# Librerías
+
 import math
 import copy
 import random
@@ -30,9 +32,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader, Subset
-
+from torch.nn.utils.rnn import pad_sequence
 from datasets import load_dataset
-from transformers import Trainer, TrainingArguments, AutoTokenizer, AutoModelForSequenceClassification
+from collections import Counter
+from transformers import Trainer, TrainingArguments, AutoTokenizer, AutoModelForSequenceClassification,  DataCollatorWithPadding
 
 import evaluate
 metric = evaluate.load("accuracy")
@@ -78,40 +81,6 @@ dataset = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1")
 print(dataset)
 ```
 
-```python
-# Carga el dataset
-dataset = load_dataset("Salesforce/wikitext", "wikitext-2-raw-v1")
-
-print(dataset)
-```
-
-README.md: 
- 10.5k/? [00:00<00:00, 863kB/s]
-
-c:\Users\usuario\AppData\Local\Programs\Python\Python313\Lib\site-packages\huggingface_hub\file_download.py:143: UserWarning: `huggingface_hub` cache-system uses symlinks by default to efficiently store duplicated files but your machine does not support them in C:\Users\usuario\.cache\huggingface\hub\datasets--Salesforce--wikitext. Caching files will still work but in a degraded version that might require more space on your disk. This warning can be disabled by setting the `HF_HUB_DISABLE_SYMLINKS_WARNING` environment variable. For more details, see https://huggingface.co/docs/huggingface_hub/how-to-cache#limitations.
-To support symlinks on Windows, you either need to activate Developer Mode or to run Python as an administrator. In order to activate developer mode, see this article: https://docs.microsoft.com/en-us/windows/apps/get-started/enable-your-device-for-development
-  warnings.warn(message)
-Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
-
-test-00000-of-00001.parquet: 100%
- 733k/733k [00:00<00:00, 33.5MB/s]
-
-Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
-
-train-00000-of-00001.parquet: 100%
- 6.36M/6.36M [00:00<00:00, 45.1MB/s]
-
-Xet Storage is enabled for this repo, but the 'hf_xet' package is not installed. Falling back to regular HTTP download. For better performance, install the package with: `pip install huggingface_hub[hf_xet]` or `pip install hf_xet`
-
-validation-00000-of-00001.parquet: 100%
- 657k/657k [00:00<00:00, 46.2MB/s]
-Generating test split: 100%
- 4358/4358 [00:00<00:00, 6797.90 examples/s]
-Generating train split: 100%
- 36718/36718 [00:00<00:00, 373783.02 examples/s]
-Generating validation split: 100%
- 3760/3760 [00:00<00:00, 86241.67 examples/s]
-
 DatasetDict({
     test: Dataset({
         features: ['text'],
@@ -142,8 +111,11 @@ test_texts  = [t for t in dataset["test"]["text"] if len(t.strip()) > 0]
 Posteriormente, se define una función de tokenización que convierte todo el texto a minúsculas y lo divide basándose en los espacios en blanco.
 
 ```python
-# Tokenización
+# Tokenización simple: split por espacios y lowercase
 def tokenize_text(text):
+    '''
+    Tokeniza un texto convirtiéndolo a minúsculas y dividiéndolo por espacios.
+    '''
     text = text.lower().strip()
     return text.split()
 ```
@@ -244,24 +216,29 @@ print(f"Test sequences: {len(test_sequences):,}")
 Train sequences: 2,028,143
 Validation sequences: 211,425
 Test sequences: 238,320
-
 ### 1.2.3. Sub-muestreo de las secuencias
 
-Para consolidar y visualizar el impacto de las transformaciones realizadas en las etapas previas, en este apartado se genera una tabla resumen utilizando la librería `tabulate`. Esta tabla ofrece una perspectiva general y estructurada de cómo ha evolucionado el volumen de datos a lo largo de todo el proceso de preparación.
+El volumen de secuencias generado en el paso anterior resulta excesivamente grande para realizar pruebas y entrenar los modelos en un tiempo computacional razonable. Por ello, en este apartado se aplica un proceso de **sub-muestreo (*sub-sampling*)**.
 
-Como se puede observar en los resultados, se parte de una cantidad moderada de fragmentos de texto originales (23.767 en el caso del conjunto de entrenamiento). Tras aplicar el proceso de ventana deslizante para generar el contexto y la palabra objetivo, esta cifra se multiplica exponencialmente hasta superar los dos millones de secuencias totales generadas.
-
-Finalmente, la columna de *Secuencias finales* refleja la aplicación del sub-muestreo, confirmando que los conjuntos han sido acotados con éxito a los límites manejables definidos en el paso anterior (60.000 secuencias para el entrenamiento y 8.000 tanto para la validación como para el testeo). Este resumen tabular no solo ilustra la magnitud de la expansión de los datos en tareas de modelado de lenguaje, sino que certifica que los subconjuntos están correctamente dimensionados y listos para la fase de entrenamiento computacional.
+Para acotar el tamaño de los datos y agilizar el entrenamiento, se establecen límites máximos mucho más manejables: 60.000 secuencias para la fase de entrenamiento, y 8.000 tanto para validación como para test.
 
 ```python
 # Reducimos tamaño para hacer entrenamientos razonables
 MAX_TRAIN = 60000
 MAX_VALID = 8000
 MAX_TEST  = 8000
+```
 
+Además, para garantizar que este experimento sea estrictamente reproducible en el futuro (es decir, que siempre se seleccionen exactamente las mismas secuencias en diferentes ejecuciones), se inicializa una semilla aleatoria (*seed*) con el valor 42 (se usó en otra PEC's). 
+
+```python
 # fijamos semilla para reproducibilidad
 random.seed(42)
+```
 
+Finalmente, utilizando una función de selección aleatoria (`random.sample`), se extrae la cantidad especificada de secuencias de los conjuntos masivos originales. 
+
+```python
 # muestreamos aleatoriamente los subconjuntos de secuencias para cada split
 train_sequences = random.sample(
     train_sequences,
@@ -338,19 +315,23 @@ En este último paso se procede a la inspección visual de las secuencias genera
 
 En primer lugar, se implementa una función de **decodificación (`decode_sequence()`)** que realiza el proceso inverso. Es decir, convierte los identificadores numéricos de las secuencias de vuelta a su formato textual original, omitiendo de forma intencionada los *tokens* de relleno (`<PAD>`) para facilitar la lectura.
 
+```python
+def decode_sequence(seq):
+    '''
+    Decodifica una secuencia de índices a palabras, ignorando los tokens de padding.
+    '''
+    return [idx2word[idx] for idx in seq if idx != vocab["<PAD>"]]
+```
 En segundo lugar, la función de **impresión (`print_examples()`)** muestra los diez primeros ejemplos mediante una función de cada uno de los subconjuntos (entrenamiento, validación y prueba). En cada bloque se aprecia:
 
 * **INPUT:** Representa el texto de entrada (compuesto por hasta 50 palabras).
 * **TARGET:** Es la palabra inmediatamente posterior.
 
-Mediante la visualización de estos ejemplos prácticos, se observa cómo los signos de puntuación se tratan como *tokens* independientes y, de manera muy destacada, se comprueba el funcionamiento del *token* `<UNK>`. Como es evidente en varios ejemplos de los conjuntos de validación y test (e.g., `<UNK> de san juan de <UNK>`), cualquier término, nombre propio o símbolo que no formaba parte del vocabulario inicial de 66.651 palabras ha sido correctamente detectado y sustituido por el identificador de palabra desconocida.
-
 ```python
-def decode_sequence(seq):
-    return [idx2word[idx] for idx in seq if idx != vocab["<PAD>"]]
-
 def print_examples(data, name, n=10):
-
+    '''
+    Imprime ejemplos de secuencias de entrada y su token objetivo.
+    '''
     print("\n" + "="*80)
     print(name.upper())
     print("="*80)
@@ -365,7 +346,12 @@ def print_examples(data, name, n=10):
         print(f"\nEjemplo {i+1}")
         print("INPUT :", " ".join(words))
         print("TARGET:", target_word)
+```
 
+Mediante la visualización de estos ejemplos prácticos, se observa cómo los signos de puntuación se tratan como *tokens* independientes y, de manera muy destacada, se comprueba el funcionamiento del *token* `<UNK>`. Como es evidente en varios ejemplos de los conjuntos de validación y test (e.g., `<UNK> de san juan de <UNK>`), cualquier término, nombre propio o símbolo que no formaba parte del vocabulario inicial de 66.651 palabras ha sido correctamente detectado y sustituido por el identificador de palabra desconocida.
+
+```python
+# Imprimir ejemplos de secuencias
 print_examples(train_sequences, "train")
 print_examples(valid_sequences, "validation")
 print_examples(test_sequences, "test")
@@ -529,6 +515,7 @@ Consideraciones:
 - Probablemente tengas que ejecutar el entrenamiento varias veces para afinar los parámetros, escalar los datos o el número de épocas.
 - Antes de realizar este ejercicio, es recomendable leer el enunciado de los siguientes ejercicios. El motivo es que deberás conservar algunos checkpoints de este ejercicio para ser utilizados después.
 </div>
+
 ## 1.5. Preparación de DataLoaders y Arquitecturas
 
 ### 1.5.1. Selección de hiperparámetros
@@ -536,6 +523,8 @@ Consideraciones:
 Se ajustaron los hiperparámetros de ambas arquitecturas para mantener un número de parámetros entrenables comparable y dentro del rango solicitado en el enunciado (5–6 millones de parámetros).
 
 Dado que el vocabulario obtenido tras la tokenización contiene 66.651 tokens, las capas de embeddings y proyección de salida dominan el tamaño total del modelo. Por este motivo se redujeron las dimensiones internas de embedding (`EMBED_DIM`) y representación oculta (`HIDDEN_DIM`) hasta obtener arquitecturas equilibradas y computacionalmente manejables.
+
+Además, teniendo en cuenta que el ejercicio 3 requiere acceder a los pesos de atención del modelo Transformer, se diseñó la arquitectura desde el inicio con soporte para su extracción, evitando así tener que reentrenar el modelo posteriormente.mensiones internas de embedding (`EMBED_DIM`) y representación oculta (`HIDDEN_DIM`) hasta obtener arquitecturas equilibradas y computacionalmente manejables.
 
 ```python
 # SELECCIÓN DE HIPERPARÁMETROS
@@ -688,9 +677,12 @@ class LSTMLanguageModel(nn.Module):
 
 ### B. Transformer - `TransformerLanguageModel`
 
-El Transformer procesa toda la secuencia simultáneamente mediante mecanismos de atención. En este caso se utilizaron dos cabezas de atención (nhead=2) tal y como solicita el enunciado, incorporando además codificación posicional para conservar información sobre el orden de las palabras.
+El Transformer procesa toda la secuencia simultáneamente mediante mecanismos de atención. Se utilizaron dos cabezas de atención (`nhead=2`) tal y como solicita el enunciado, incorporando codificación posicional para conservar información sobre el orden de las palabras.
 
-> Referencia Atention is all you need
+Dado que el ejercicio 3 requiere acceder a los pesos de atención del modelo ya entrenado, la arquitectura incorpora desde el principio capas personalizadas (`TransformerEncoderLayerWithAttn`) que exponen los pesos de atención mediante `need_weights=True`, confirmado como el parámetro correcto en PyTorch (ver el foro de la PEC-M4). 
+
+> Referencia: *Attention Is All You Need* (Vaswani et al., 2017)
+
 ```python
 # TRANSFORMER
 
@@ -732,72 +724,104 @@ class PositionalEncoding(nn.Module):
         # la posición de cada token
         return x + self.pe[:, :x.size(1)] # type: ignore
 
-class TransformerLanguageModel(nn.Module):
-    '''
-    Modelo de lenguaje basado en Transformer Encoder.
 
-    Utiliza mecanismos de atención para procesar
-    toda la secuencia simultáneamente.
+class TransformerEncoderLayerWithAttn(nn.Module):
     '''
-    def __init__(
-        self,
-        vocab_size,
-        embed_dim,
-        nhead,
-        num_layers,
-        dropout
-    ):
+    Capa Transformer personalizada que devuelve los pesos de atención
+    mediante need_weights=True en nn.MultiheadAttention.
+    '''
+    def __init__(self, d_model, nhead, dropout=0.1):
         super().__init__()
 
-        # la capa de embedding convierte índices de palabras a vectores densos
-        self.embedding = nn.Embedding(
-            vocab_size,
-            embed_dim
-        )
-
-        # la codificación posicional se suma a los embeddings de las palabras para que el modelo pueda distinguir 
-        # la posición de cada token
-        self.pos_encoding = PositionalEncoding(embed_dim)
-
-        # el TransformerEncoderLayer es la unidad básica del Transformer, que incluye mecanismos de atención y feedforward
-        encoder_layer = nn.TransformerEncoderLayer(
-            d_model=embed_dim,
-            nhead=nhead,
+        # mecanismo de self-attention con need_weights habilitado
+        self.self_attn = nn.MultiheadAttention(
+            d_model, nhead,
             dropout=dropout,
             batch_first=True
         )
 
-        # el TransformerEncoder se compone de varias capas de TransformerEncoderLayer apiladas,
-        # lo que permite al modelo capturar relaciones complejas en la secuencia
-        self.transformer = nn.TransformerEncoder(
-            encoder_layer,
-            num_layers=num_layers
-        )
-
-        # el dropout se aplica a la salida del Transformer para evitar sobreajuste
+        # bloque feedforward con una capa oculta de tamaño 4*d_model, activación ReLU y dropout
+        self.linear1 = nn.Linear(d_model, d_model * 4)
+        # la segunda capa del bloque feedforward reduce la dimensionalidad de vuelta a d_model
+        self.linear2 = nn.Linear(d_model * 4, d_model)
+        # las capas de normalización se aplican después de cada bloque con conexiones residuales
+        self.norm1   = nn.LayerNorm(d_model)
+        # la segunda capa de normalización se aplica después del bloque feedforward
+        self.norm2   = nn.LayerNorm(d_model)
+        # el dropout se aplica después de cada bloque para evitar sobreajuste
         self.dropout = nn.Dropout(dropout)
-
-        # la capa fully connected toma la salida del Transformer y produce logits para cada palabra en el vocabulario,
-        self.fc = nn.Linear(embed_dim, vocab_size)
 
     def forward(self, x):
 
+        # self-attention
+        attn_out, attn_weights = self.self_attn(
+            x, x, x,
+            #  recupera los pesos de atención
+            need_weights=True,
+            # promedia las cabezas de atencion
+            average_attn_weights=True
+        )
+
+        # conexión residual + normalización
+        x = self.norm1(x + self.dropout(attn_out))
+
+        # bloque feedforward
+        ff = self.linear2(self.dropout(F.relu(self.linear1(x))))
+        # conexión residual + normalización
+        x  = self.norm2(x + self.dropout(ff))
+
+        return x, attn_weights
+
+
+class TransformerLanguageModel(nn.Module):
+    '''
+    Modelo de lenguaje basado en Transformer Encoder.
+
+    Utiliza mecanismos de atención para procesar toda la secuencia
+    simultáneamente. Soporta extracción de pesos de atención
+    mediante el parámetro return_attentions=True.
+    '''
+    def __init__(self, vocab_size, embed_dim, nhead, num_layers, dropout):
+        super().__init__()
+
+        # la capa de embedding convierte índices de palabras a vectores densos
+        self.embedding    = nn.Embedding(vocab_size, embed_dim)
+        # la codificación posicional se suma a los embeddings para que el modelo pueda distinguir la posición de cada token
+        self.pos_encoding = PositionalEncoding(embed_dim)
+
+        # apilamos las capas personalizadas que exponen los pesos de atención
+        self.layers = nn.ModuleList([
+            TransformerEncoderLayerWithAttn(embed_dim, nhead, dropout)
+            for _ in range(num_layers)
+        ])
+
+        # el dropout se aplica a la salida del Transformer antes de pasarla a la capa fully connected
+        self.dropout = nn.Dropout(dropout)
+        # la capa fully connected toma la salida del Transformer y produce logits para cada palabra en el vocabulario
+        self.fc      = nn.Linear(embed_dim, vocab_size)
+
+    def forward(self, x, return_attentions=False):
+
         # convertimos los índices de palabras a embeddings densos
-        x = self.embedding(x)
+        x        = self.embedding(x)
+        # sumamos la codificación posicional a los embeddings para que el modelo pueda distinguir la posición de cada token
+        x        = self.pos_encoding(x)
+        all_attn = []
 
-        # sumamos la codificación posicional a los embeddings de las palabras para que el modelo pueda distinguir
-        x = self.pos_encoding(x)
+        # iteramos por cada capa del Transformer, pasando la salida de una como entrada a la siguiente
+        for layer in self.layers:
+            x, attn = layer(x)
+            all_attn.append(attn)
 
-        # el Transformer procesa toda la secuencia a la vez usando mecanismos de atención,
-        x = self.transformer(x)
-        x = x[:, -1, :]
-
+        # solo nos interesa la salida del último token de la secuencia, que es donde el modelo hace su predicción
+        out    = x[:, -1, :]
         # aplicamos dropout a la salida del Transformer antes de pasarla a la capa fully connected
-        x = self.dropout(x)
+        out    = self.dropout(out)
+        # la capa fully connected produce los logits para cada palabra en el vocabulario, que luego se usarán para calcular la pérdida y hacer predicciones
+        logits = self.fc(out)
 
-        # la capa fully connected produce los logits para cada palabra en el vocabulario, 
-        # que luego se usarán para calcular la pérdida y hacer predicciones
-        logits = self.fc(x)
+        if return_attentions:
+            return logits, all_attn
 
         return logits
 ```
@@ -928,115 +952,83 @@ def evaluate_model(model, loader, criterion):
 
 ## 1.5.7. Entrenamiento de los modelos
 
-Durante el entrenamiento mediante la función (`train_model()`) se almacenaron métricas de `loss` y `accuracy` para posteriormente comparar ambas arquitecturas mediante gráficas. Además, se implementó `early stopping` para detener automáticamente el entrenamiento cuando la pérdida de validación (`loss validation`) deja de mejorar, reduciendo así el riesgo de overfitting y el tiempo de entrenamiento innecesario.
+Durante el entrenamiento mediante la función (`train_model()`) se almacenaron métricas de `loss` y `accuracy` para posteriormente comparar ambas arquitecturas mediante gráficas. Se implementó `early stopping` para detener automáticamente el entrenamiento cuando la pérdida de validación deja de mejorar, reduciendo así el riesgo de overfitting.
+
+Adicionalmente, dado que el ejercicio 3 requiere comparar los pesos de atención en dos momentos distintos del entrenamiento, la función guarda un checkpoint al finalizar la primera época. El checkpoint del estado final corresponde al mejor modelo recuperado por el mecanismo de early stopping.
 
 ```python
 # Entrenamiento del modelo con early stopping
 
 def train_model(model, train_loader, valid_loader, epochs):
     '''
-    Entrena el modelo utilizando el conjunto de entrenamiento y evalúa su rendimiento en el 
-    conjunto de validación después de cada época.
+    Entrena el modelo y evalúa su rendimiento en validación tras cada época.
+
+    Guarda un checkpoint al finalizar la época 1 para su uso posterior
+    en la visualización de pesos de atención (ejercicio 3).
+
+    Devuelve el modelo con los mejores pesos, el historial de métricas
+    y el checkpoint de la primera época.
     '''
-    criterion = nn.CrossEntropyLoss()
+    criterion  = nn.CrossEntropyLoss()
+    optimizer  = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    optimizer = torch.optim.Adam(
-        model.parameters(),
-        lr=LEARNING_RATE
-    )
+    history    = {"train_loss": [], "valid_loss": [], "valid_acc": []}
 
-    history = {
-        "train_loss": [],
-        "valid_loss": [],
-        "valid_acc": []
-    }
-
-    best_model = None
-    best_loss = float("inf")
+    best_model              = None
+    best_loss               = float("inf")
     epochs_without_improvement = 0
+    checkpoint_epoch1       = None   # checkpoint guardado al final de la época 1
 
     for epoch in range(epochs):
         model.train()
         running_loss = 0
 
         for x, y in tqdm(train_loader):
-            x = x.to(DEVICE)
-            y = y.to(DEVICE)
+            x, y = x.to(DEVICE), y.to(DEVICE)
             optimizer.zero_grad()
             logits = model(x)
-            loss = criterion(logits, y)
+            loss   = criterion(logits, y)
             loss.backward()
-            # Evita exploding gradients
-            torch.nn.utils.clip_grad_norm_(
-                model.parameters(),
-                1.0
-            )
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             running_loss += loss.item()
 
-        # ====================================================
-        # MÉTRICAS TRAIN
-        # ====================================================
-        train_loss = running_loss / len(train_loader)
-
-        # ====================================================
-        # VALIDACIÓN
-        # ====================================================
-        valid_loss, valid_acc = evaluate_model(
-            model,
-            valid_loader,
-            criterion
-        )
+        train_loss            = running_loss / len(train_loader)
+        valid_loss, valid_acc = evaluate_model(model, valid_loader, criterion)
 
         history["train_loss"].append(train_loss)
         history["valid_loss"].append(valid_loss)
         history["valid_acc"].append(valid_acc)
 
-        # ====================================================
-        # LOGS
-        # ====================================================
         print(f"\nEpoch {epoch+1}")
         print(f"Train loss: {train_loss:.4f}")
         print(f"Valid loss: {valid_loss:.4f}")
         print(f"Valid acc : {valid_acc:.4f}")
 
-        generated = generate_text(
-            model,
-            "Artificial intelligence is",
-            max_words=10
-        )
+        generated = generate_text(model, "Artificial intelligence is", max_words=10)
+        print(f"\nGenerated text:\n{generated}")
 
-        print("\nGenerated text:")
-        print(generated)
+        # guardamos el estado del modelo al finalizar la primera época
+        if epoch == 0:
+            checkpoint_epoch1 = copy.deepcopy(model.state_dict())
+            print("\nCheckpoint época 1 guardado")
 
-        # ====================================================
-        # EARLY STOPPING
-        # ====================================================
+        # early stopping
         if valid_loss < best_loss:
-            best_loss = valid_loss
-            best_model = copy.deepcopy(
-                model.state_dict()
-            )
-
+            best_loss  = valid_loss
+            best_model = copy.deepcopy(model.state_dict())
             epochs_without_improvement = 0
             print("\nValidation loss improved")
-
         else:
             epochs_without_improvement += 1
-            print(
-                f"\nNo improvement for "
-                f"{epochs_without_improvement} epoch(s)"
-            )
+            print(f"\nNo improvement for {epochs_without_improvement} epoch(s)")
 
             if epochs_without_improvement >= PATIENCE:
                 print("\nEarly stopping activated")
                 break
 
-    # ========================================================
-    # RECUPERAR MEJOR MODELO
-    # ========================================================
     model.load_state_dict(best_model)
-    return model, history
+    return model, history, checkpoint_epoch1
 ```
 
 ## 1.5.7. Resultados del entrenamiento
@@ -1048,22 +1040,14 @@ En las frases generadas se aprecia que, al inicio, ambos modelos repiten palabra
 También se observa que el Transformer requiere bastante más tiempo por época que el LSTM, algo esperable debido al coste computacional del mecanismo de atención. Finalmente, las métricas de validación y test son muy similares entre ambos modelos, indicando que las dos arquitecturas presentan un rendimiento comparable en este problema.
 
 ```python
-# ============================================================
-# INICIAR ENTRENAMIENTO
-# ============================================================
+# Iniciar Entrenamiento
 
-lstm_model, lstm_history = train_model(
-    lstm_model,
-    train_loader,
-    valid_loader,
-    epochs=EPOCHS
+lstm_model, lstm_history, _ = train_model(
+    lstm_model, train_loader, valid_loader, epochs=EPOCHS
 )
 
-transformer_model, transformer_history = train_model(
-    transformer_model,
-    train_loader,
-    valid_loader,
-    epochs=EPOCHS
+transformer_model, transformer_history, transformer_ckpt_epoch1 = train_model(
+    transformer_model, train_loader, valid_loader, epochs=EPOCHS
 )
 ```
 
@@ -1193,94 +1177,86 @@ No improvement for 3 epoch(s)
 
 Early stopping activated
 
-## 1.5.8. Visualización de la evolucion por modelo
+## 1.5.8. Persistencia de checkpoints del Transformer
 
-PON EL TEXTO AQUI
+Para evitar repetir el costoso entrenamiento del Transformer en cada sesión, los checkpoints de la época 1 y del modelo final se guardaron en disco tras la primera ejecución. Las celdas se mantienen comentadas para no sobreescribir accidentalmente los modelos ya entrenados.
+
+# transformer_model, transformer_history, transformer_ckpt_epoch1 = train_model(
+#    transformer_model, train_loader, valid_loader, epochs=EPOCHS
+# )
+
+# Guardamos ambos checkpoints en disco
+# torch.save(transformer_ckpt_epoch1,        r"../models/transformer_ckpt_epoch1.pt")
+# torch.save(transformer_model.state_dict(), r"../models/transformer_ckpt_final.pt")
+
+# Cargar si es necesario
+# ckpt_epoch1 = torch.load(r"../models/transformer_ckpt_epoch1.pt", map_location=DEVICE)
+# ckpt_final  = torch.load(r"../models/transformer_ckpt_final.pt",  map_location=DEVICE)
+
+# tokens_e1,    attn_e1    = get_attention_weights(ckpt_epoch1, SAMPLE_SENTENCE)
+# tokens_final, attn_final = get_attention_weights(ckpt_final,  SAMPLE_SENTENCE)
+
+
+## 1.5.9. Visualización de la evolucion por modelo
+
+En la gráfica de pérdida se observa que ambos modelos reducen su `train loss` de forma continua, mientras que la `validation loss` se estabiliza desde las primeras épocas, evidenciando un sobreajuste temprano que el `early stopping` corta correctamente. El Transformer mantiene una `validation loss` inferior al LSTM durante todo el entrenamiento (~7.29 vs ~7.42), lo que justifica su selección como mejor modelo.
 
 ```python
 # ============================================================
 # PLOTS
 # ============================================================
-
-lstm_epochs = range(
-    1,
-    len(lstm_history["train_loss"]) + 1
-)
-
-transformer_epochs = range(
-    1,
-    len(transformer_history["train_loss"]) + 1
-)
+lstm_epochs = range(1, len(lstm_history["train_loss"]) + 1)
+transformer_epochs = range(1,len(transformer_history["train_loss"]) + 1)
 
 # ============================================================
 # LOSS
 # ============================================================
-
 plt.figure(figsize=(10, 6))
-
-plt.plot(
-    lstm_epochs,
-    lstm_history["train_loss"],
-    label="LSTM Train Loss"
-)
-
-plt.plot(
-    lstm_epochs,
-    lstm_history["valid_loss"],
-    label="LSTM Validation Loss"
-)
-
-plt.plot(
-    transformer_epochs,
-    transformer_history["train_loss"],
-    label="Transformer Train Loss"
-)
-
-plt.plot(
-    transformer_epochs,
-    transformer_history["valid_loss"],
-    label="Transformer Validation Loss"
-)
-
+plt.plot(lstm_epochs, lstm_history["train_loss"], label="LSTM Train Loss")
+plt.plot(lstm_epochs, lstm_history["valid_loss"], label="LSTM Validation Loss")
+plt.plot(transformer_epochs, transformer_history["train_loss"],label="Transformer Train Loss")
+plt.plot(transformer_epochs, transformer_history["valid_loss"], label="Transformer Validation Loss")
 plt.xlabel("Epoch")
 plt.ylabel("Loss")
 plt.title("Train and Validation Loss")
 plt.legend()
 plt.grid()
+# guardar figura
+plt.savefig(r"../figures/train_validation_loss.png", dpi=300, bbox_inches="tight")
 plt.show()
+```
 
+![train_validation_loss](../figures/train_validation_loss.png)
+
+En cuanto a la `validation accuracy`, el Transformer parte con ventaja en la primera época (~0.102 vs ~0.064), lo que refleja su capacidad para capturar relaciones globales en la secuencia desde el inicio. Ambos modelos convergen a partir de la época 3, estabilizándose en torno al 11–12%. A partir de ese punto, el LSTM supera ligeramente al Transformer en accuracy, aunque la diferencia es marginal (~0.003). Los valores de accuracy son bajos en términos absolutos, pero esperables dado el tamaño del vocabulario (~66K tokens): predecir la siguiente palabra exacta en un corpus tan rico como WikiText-2 es una tarea muy exigente para modelos de ~5–6M de parámetros. 
+
+```python
 # ============================================================
 # VALIDATION ACCURACY
 # ============================================================
 plt.figure(figsize=(10, 6))
-
-plt.plot(
-    lstm_epochs,
-    lstm_history["valid_acc"],
-    label="LSTM Validation Accuracy"
-)
-
-plt.plot(
-    transformer_epochs,
-    transformer_history["valid_acc"],
-    label="Transformer Validation Accuracy"
-)
+plt.plot(lstm_epochs, lstm_history["valid_acc"], label="LSTM Validation Accuracy")
+plt.plot(transformer_epochs, transformer_history["valid_acc"], label="Transformer Validation Accuracy")
 
 plt.xlabel("Epoch")
 plt.ylabel("Accuracy")
 plt.title("Validation Accuracy")
 plt.legend()
 plt.grid()
+# guardar figura
+plt.savefig(r"../figures/validation_accuracy.png", dpi=300, bbox_inches="tight")
 plt.show()
 ```
 
-## 1.5.9. Evaluación y comparación del rendimiento de los modelos
+![validation_accuracy](../figures/validation_accuracy.png)
+
+## 1.5.10. Evaluación y comparación del rendimiento de los modelos
 
 La tabla muestra los resultados de ambos modelos sobre los conjuntos de validación y test. 
 
-El Transformer obtiene una menor pérdida de validación, siendo seleccionado como el mejor modelo, aunque ambas arquitecturas presentan valores de `accuracy` muy similares.
+El Transformer obtiene una menor pérdida de validación, siendo seleccionado como el mejor modelo, aunque ambas arquitecturas presentan valores de `accuracy` muy similares (cercanos al 11 %).
 
-Los resultados son coherentes para con la dificultad de predecir la siguiente palabra exacta sobre un vocabulario de  más de 66.000 tokens con modelos de entre 5 y 6 millones de parámetros. Es de destacar que el LSTM supera ligeramente al Transformer en `Validation accuracy` con un coste computacional por época significativamente menor, lo que puede ser relevante en escenarios con recursos limitados.
+Los resultados son coherentes para con la dificultad de predecir la siguiente palabra exacta sobre un vocabulario de más de 66.000 tokens con modelos de entre 5 y 6 millones de parámetros. Es de destacar que el LSTM supera ligeramente al Transformer en `Validation accuracy` con un coste computacional por época significativamente menor, lo que puede ser relevante en escenarios con recursos limitados.
 
 ```python
 criterion = nn.CrossEntropyLoss()
@@ -1310,25 +1286,273 @@ tr_test_loss, tr_test_acc = evaluate_model(
 )
 
 results = [
-    ["LSTM", lstm_val_acc, lstm_test_acc],
-    ["Transformer", tr_val_acc, tr_test_acc]
+    ["LSTM", lstm_val_loss, lstm_val_acc, lstm_test_acc],
+    ["Transformer", tr_val_loss, tr_val_acc, tr_test_acc]
 ]
 
 print(
     tabulate(
         results,
-        headers=["Modelo", "Validation Accuracy", "Test Accuracy"],
+        headers=["Modelo", "Validation Loss", "Validation Accuracy", "Test Accuracy"],
         tablefmt="grid",
         floatfmt=".4f"
     )
 )
+
+best_model_name = (
+    "LSTM"
+    if lstm_val_loss < tr_val_loss
+    else "Transformer"
+)
+
+print(f"El mejor modelo de acuerdo a la pérdida de validación es: {best_model_name}")
 ```
 
 +-------------+-------------------+-----------------------+-----------------+
 | Modelo      |   Validation Loss |   Validation Accuracy |   Test Accuracy |
 +=============+===================+=======================+=================+
-| LSTM        |            7.3549 |                0.1118 |          0.1105 |
+| LSTM        |            7.3568 |                0.1072 |          0.1047 |
 +-------------+-------------------+-----------------------+-----------------+
-| Transformer |            7.2491 |                0.1092 |          0.1080 |
+| Transformer |            7.3122 |                0.1092 |          0.1052 |
 +-------------+-------------------+-----------------------+-----------------+
-El mejor modelo de acuerdo a la perdida de validación es: Transformer
+El mejor modelo de acuerdo a la pérdida de validación es: Transformer
+
+<div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+<p><strong>Pregunta:</strong> Explicar en dos líneas tus principales conclusiones al comparar ambas arquitecturas en este problema.</p>
+
+<p><strong>Solución:</strong> El Transformer logra ligeramente mejor pérdida de validación y accuracy sobre test. Esto sugiere una mejor capacidad para capturar relaciones contextuales dentro de la secuencia gracias al mecanismo de self-attention.</p>
+</div>
+
+---
+---
+
+# 2. Visualización transformers
+En esta parte vamos a visualizar los pesos de atención de las capas transformer para entender como funciona el contexto y la atención.
+
+
+<div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+
+
+**Ejercicio 3. Visualización sobre la cabeza de atención [1 pts.].**
+En este ejercicio, el objetivo es representar los pesos de self-attention del modelo anterior y de otro modelo preentrenado. Las visualizaciones que se piden son (1) matriz de self attention y (2) token alignment. Estas dos visualizaciónes se pueden ver en la figura 1 izquierda arriba y figura 1 izquierda abajo de [ Interpretability analysis in transformers based on attention visualization](https://www.researchgate.net/publication/382296866_Interpretability_analysis_in_transformers_based_on_attention_visualization). Para ello, elige una frase de train y:
+  1. Representa la matriz de atención para el modelo entrenado en el apartado anterior en su estado en la época 1 y en su estado en la época final. [0.4p]
+  2. Repite lo mismo, pero ahora representando el token alignment. [0.4p]
+  3. Escribe en dos líneas lo que observas. [0.2p]
+
+
+Notas:
+* Para entender mejor este tipo de visualizaciones se recomida ver el siguiente vídeo: [
+Atención en los Transformers explicado visualmente](https://www.youtube.com/watch?v=eMlx5fFNoYc)
+* Para realizar las representaciones visuales se puede utilizar cualquier tipo de libreria.
+* Utiliza return_attentions=True en tu modelo para recuperar los pesos de la matriz de atención.
+</div>
+
+## 2.1. Extracción de pesos de atención
+
+Dado que el `TransformerLanguageModel` del ejercicio 2 ya incorpora soporte para `return_attentions=True` mediante `need_weights=True` en `nn.MultiheadAttention` (confirmado su uso como el parámetro correcto por el equipo docente en el foro de la PEC-M4), no es necesario redefinir ni reentrenar ningún modelo. Los checkpoints de la época 1 (`transformer_ckpt_epoch1`) y del estado final (`transformer_model.state_dict()`) quedaron guardados durante el entrenamiento del ejercicio 2.
+
+Se selecciona una frase real del conjunto de entrenamiento con al menos 8 palabras, fijando la semilla para garantizar reproducibilidad. La función `get_attention_weights()` carga el checkpoint indicado en el modelo, realiza un forward pass con `return_attentions=True` y devuelve los tokens y los pesos de atención de la primera capa del encoder, recortados a la longitud real de la frase.
+
+```pyton
+# Selección reproducible de una frase real del conjunto de entrenamiento
+random.seed(42)
+sample_text = random.choice([t for t in train_texts if len(t.split()) >= 8])
+SAMPLE_SENTENCE = " ".join(sample_text.lower().split()[:10])
+print(f"Frase seleccionada: {SAMPLE_SENTENCE}")
+```
+Frase seleccionada: a new tricycle undercarriage was fitted , with the main
+
+```python
+def get_attention_weights(state_dict, sentence):
+    '''
+    Carga un checkpoint en el TransformerLanguageModel del ejercicio 2
+    y extrae los pesos de atención de la primera capa del encoder
+    para la frase indicada.
+    '''
+
+    # inicializamos un nuevo modelo Transformer con los mismos hiperparámetros que el modelo entrenado
+    model = TransformerLanguageModel(
+        vocab_size=VOCAB_SIZE,
+        embed_dim=EMBED_DIM,
+        nhead=NHEAD,
+        num_layers=NUM_LAYERS,
+        dropout=DROPOUT
+    ).to(DEVICE)
+
+    # cargamos el estado del modelo desde el checkpoint proporcionado
+    model.load_state_dict(state_dict)
+    model.eval()
+
+    # tokenizamos la frase de entrada, convertimos las palabras a índices usando el vocabulario,
+    # ajustamos la secuencia a la longitud SEQ_LEN
+    words   = sentence.lower().split()
+    encoded = [vocab.get(w, vocab["<UNK>"]) for w in words]
+    encoded = encoded[-SEQ_LEN:]
+    encoded = [vocab["<PAD>"]] * (SEQ_LEN - len(encoded)) + encoded
+
+    # convertimos la secuencia de índices a un tensor y la movemos al dispositivo (CPU o GPU)
+    x = torch.tensor(encoded).unsqueeze(0).to(DEVICE)
+
+    # hacemos una pasada hacia adelante por el modelo con return_attentions=True para obtener 
+    # los pesos de atención de la primera capa
+    with torch.no_grad():
+        _, all_attn = model(x, return_attentions=True)
+
+    # primera capa, recortada a la longitud real de la frase
+    attn = all_attn[0].squeeze(0).cpu().numpy()
+    n    = len(words)
+    attn = attn[-n:, -n:]
+
+    return words, attn
+
+
+# Extraemos pesos para época 1 y época final
+tokens_e1,    attn_e1    = get_attention_weights(transformer_ckpt_epoch1,          SAMPLE_SENTENCE)
+tokens_final, attn_final = get_attention_weights(transformer_model.state_dict(),   SAMPLE_SENTENCE)
+```
+
+## 2.2. Matriz de self-attention
+
+La matriz de *self-attention* muestra cómo cada token distribuye su atención sobre el resto de la secuencia. En la época 1 la atención aparece todavía dispersa, aunque ya destacan relaciones como la elevada atención del token ‘,’ hacia *tricycle* (0.37). En el modelo final la atención se vuelve más selectiva y estructurada, concentrándose principalmente en tokens relevantes como *tricycle*, mientras palabras menos informativas como *a* o *the* reciben menor atención.
+
+```python
+# Visualización de la matriz de self-attention para época 1 y época final
+
+fig, axes = plt.subplots(1, 2, figsize=(16, 6))
+
+for ax, attn, tokens, title in zip(
+    axes,
+    [attn_e1,   attn_final],
+    [tokens_e1, tokens_final],
+    ["Época 1", "Época final"]
+):
+    im = ax.imshow(attn, cmap="Blues", vmin=0, vmax=attn.max(), aspect="auto")
+
+    ax.set_xticks(range(len(tokens)))
+    ax.set_yticks(range(len(tokens)))
+    ax.set_xticklabels(tokens, rotation=45, ha="right", fontsize=9)
+    ax.set_yticklabels(tokens, fontsize=9)
+    ax.set_title(title, fontsize=13, fontweight="bold", pad=10)
+    ax.set_xlabel("Token atendido (Key)",      fontsize=10)
+    ax.set_ylabel("Token que atiende (Query)", fontsize=10)
+
+    # anotamos el valor numérico en cada celda
+    for i in range(len(tokens)):
+        for j in range(len(tokens)):
+            ax.text(
+                j, i, f"{attn[i, j]:.2f}",
+                ha="center", va="center",
+                fontsize=7,
+                color="white" if attn[i, j] > attn.max() * 0.6 else "black"
+            )
+
+    plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+fig.suptitle("Matriz de Self-Attention — Capa 1", fontsize=14, fontweight="bold", y=1.02)
+plt.tight_layout()
+
+plt.savefig(r"../figures/attention_matrix.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+![attention_matrix](../figures/attention_matrix.png)
+
+## 2.3. Token alignment
+
+El token *alignment* visualiza cómo cada token atiende al resto de la secuencia mediante conexiones entre pares (query -> key) cuya intensidad refleja el peso de atención. En la época 1 las conexiones son más dispersas y homogéneas, aunque destacan ligeramente *tricycle* y *main*, mientras que en el modelo final la atención se concentra claramente en términos clave como *tricycle*, *undercarriage* y *main*, reduciendo el peso de conexiones secundarias y mostrando un aprendizaje más enfocado y consistente.
+
+```python
+# Visualización del token alignment para época 1 y época final
+
+def plot_bertviz_style(ax, attn, tokens, title):
+    '''
+    Dibuja el token alignment al estilo BertViz: fondo negro, tokens a ambos
+    lados y líneas con opacidad proporcional al peso de atención.
+    '''
+    ax.set_facecolor("black")
+    n = len(tokens)
+
+    # posiciones verticales de los tokens (de arriba a abajo)
+    y_positions = list(range(n))
+
+    for i, tok in enumerate(tokens):
+        # columna izquierda (query)
+        ax.text(
+            0.0, i, tok,
+            ha="right", va="center",
+            color="white", fontsize=10,
+            transform=ax.get_yaxis_transform()
+        )
+        # columna derecha (key)
+        ax.text(
+            1.0, i, tok,
+            ha="left", va="center",
+            color="white", fontsize=10,
+            transform=ax.get_yaxis_transform()
+        )
+
+    # dibujamos una línea por cada par (query i → key j)
+    for i in range(n):
+        for j in range(n):
+            weight = attn[i, j]
+            if weight > 0.01:   # omitimos conexiones casi nulas
+                ax.plot(
+                    [0.1, 0.9], [i, j],
+                    color="steelblue",
+                    alpha=float(weight),
+                    linewidth=1.2,
+                    transform=ax.get_yaxis_transform()
+                )
+
+    ax.set_xlim(-0.5, 1.5)
+    ax.set_ylim(-0.5, n - 0.5)
+    ax.invert_yaxis()
+    ax.axis("off")
+    ax.set_title(title, color="white", fontsize=12,
+                 fontweight="bold", pad=8)
+
+
+fig, axes = plt.subplots(
+    1, 2,
+    figsize=(14, 6),
+    facecolor="black"
+)
+
+plot_bertviz_style(axes[0], attn_e1,    tokens_e1,    "Layer 0, Head 0 — Época 1")
+plot_bertviz_style(axes[1], attn_final, tokens_final, "Layer 0, Head 0 — Época final")
+
+plt.tight_layout()
+
+plt.savefig(r"../figures/token_alignment_Bertviz_style.png", dpi=150, bbox_inches="tight",  facecolor="black")
+
+plt.show()
+```
+
+![token_alignment_Bertviz_style](../figures/token_alignment_Bertviz_style.png)
+
+<div style="background-color: #fcf2f2; border-color: #dfb5b4; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+<p><strong>Solución:</strong> El ejercicio se ha ido explicando e interpretando en cada apartado</p>
+</div>
+
+---
+---
+
+# 3. Modelos transformers fundacionales
+A diferencia de las redes recurrentes, los modelos basados en Transformers tienen la capacidad de escalar en tamaño gracias a sus mecanismos de atención. Por eso, en la práctica, se pueden entrenar modelos muy profundos con billones de parámetros. Debido a esto, difícilmente un individuo o incluso la gran mayoría de empresas y grupos de investigación tienen las capacidades de entrar en estos modelos desde cero. Vamos a plantear cómo se realizaría en la práctica esto.
+
+El objetivo de esta sección va ser tener el mejor modelo de análisis de sentimiento para IMBD basado en arquitecturas preentrenadas tipo Bert. Aquí, supon que tienes que **poner este modelo en producción**, para ello tienes que conseguir un **modelo con una accuracy suficientemente buena, pero también que sea rápido y eficiente**. Para ello exploraremos 4 enfoques distintos y complementarios en los ejercicios 4, 5, 6 y 7.
+
+<div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+
+**Ejercicio 4. Finetuning downstream de un modelo pequeño [2 pts.].**
+Este ejercicio debes tomar el modelo preentrenado [gaunernst/bert-mini-uncased](https://huggingface.co/gaunernst/bert-mini-uncased) de hugginface y entrenarlo para clasificar la base de datos [imbd](https://huggingface.co/datasets/stanfordnlp/imdb). Tanto el modelo como la base de datos los puedes descargar de forma automática de huggingface. Se pide:
+
+1. Muestra en pantalla la estructura del modelo y el número de parámetros.
+2. Modifica el modelo downstream para convertirlo en un modelo de clasificación. Toma las decisiones y suposiciones que consideres de forma debidamente justificada. Preprocesa la base de datos para poder entrenarla con el modelo.
+3. Entrena el modelo de forma adecuada y completa.
+4. Muestra las curvas de entrenamiento. Las gráficas deben ser claras e informativas.
+5. Finalmente, muestra los resultados sobre el conjunto de test de tu mejor modelo.
+6. Calcula cuanto tiempo cuesta hacer una inferencia sobre todo el conjunto de test.
+7. Construye una tabla (imprimiendola adecuadamente con tabular) en la que se muestre el nombre del modelo, el número de parámetros, la accuracy sobre test y el tiempo de inferencia sobre todo el conjunto de test.
+
+</div>
