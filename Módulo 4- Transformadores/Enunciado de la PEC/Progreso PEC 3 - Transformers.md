@@ -23,6 +23,7 @@ import math
 import copy
 import random
 import time
+import json
 
 import numpy as np
 import pandas as pd
@@ -2136,3 +2137,362 @@ Como referencia, en la Tabla 2 de [DistilBERT, a distilled version of BERT: smal
 faster, cheaper and lighter](https://arxiv.org/pdf/1910.01108) se muestra la accuracy que se puede obtener con este modelo entrenando sobre esta base de datos. Al congelar capas quizás no obtengas esa accuracy, pero debes tomar tus decisiones para obtener accuracies cercanas a esa.
 
 ## 3.2.1. Carga del modelo `gaunernst/bert-mini-uncased`
+
+```python
+MODEL_NAME = "distilbert-base-uncased"
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+
+model_distilbert = AutoModelForSequenceClassification.from_pretrained(
+    MODEL_NAME,
+    num_labels=2
+).to(DEVICE)
+```
+
+## 3.2.2. Revisión de la arquitectura y número de parámetros
+
+```python
+# Estructura del modelo
+print(model_distilbert)
+
+# Numero de parametros entrenables
+print("Parámetros entrenables:", count_parameters(model_distilbert))
+```
+
+DistilBertForSequenceClassification(
+  (distilbert): DistilBertModel(
+    (embeddings): Embeddings(
+      (word_embeddings): Embedding(30522, 768, padding_idx=0)
+      (position_embeddings): Embedding(512, 768)
+      (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+      (dropout): Dropout(p=0.1, inplace=False)
+    )
+    (transformer): Transformer(
+      (layer): ModuleList(
+        (0-5): 6 x TransformerBlock(
+          (attention): DistilBertSdpaAttention(
+            (dropout): Dropout(p=0.1, inplace=False)
+            (q_lin): Linear(in_features=768, out_features=768, bias=True)
+            (k_lin): Linear(in_features=768, out_features=768, bias=True)
+            (v_lin): Linear(in_features=768, out_features=768, bias=True)
+            (out_lin): Linear(in_features=768, out_features=768, bias=True)
+          )
+          (sa_layer_norm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+          (ffn): FFN(
+            (dropout): Dropout(p=0.1, inplace=False)
+            (lin1): Linear(in_features=768, out_features=3072, bias=True)
+            (lin2): Linear(in_features=3072, out_features=768, bias=True)
+            (activation): GELUActivation()
+          )
+          (output_layer_norm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+        )
+      )
+    )
+  )
+  (pre_classifier): Linear(in_features=768, out_features=768, bias=True)
+  (classifier): Linear(in_features=768, out_features=2, bias=True)
+  (dropout): Dropout(p=0.2, inplace=False)
+)
+Parámetros entrenables: 66955010
+
+## 3.2.3. Proceso de Tokenización
+
+```python
+# Recargar dataset limpio
+dataset = load_dataset("stanfordnlp/imdb")
+
+# Tokenización con DistilBERT
+tokenized_dataset_distilbert = dataset.map(
+    tokenize_function,
+    batched=True
+)
+```
+
+### 3.2.4. Preparación de batches para entrenamiento
+
+```python
+# Preprocesado
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
+tokenized_dataset_distilbert = tokenized_dataset_distilbert.remove_columns(["text"])
+tokenized_dataset_distilbert = tokenized_dataset_distilbert.rename_column("label", "labels")
+
+# Split train / val
+train_val = tokenized_dataset_distilbert["train"].train_test_split(
+    test_size=0.1,
+    seed=42
+)
+
+train_val.set_format("torch")
+tokenized_dataset_distilbert["test"].set_format("torch")
+
+# DataLoaders
+train_dataloader = DataLoader(train_val["train"], batch_size=BATCH_SIZE, shuffle=True,  collate_fn=data_collator) # type: ignore
+val_dataloader   = DataLoader(train_val["test"],  batch_size=BATCH_SIZE, shuffle=False, collate_fn=data_collator) # type: ignore
+test_dataloader  = DataLoader(tokenized_dataset_distilbert["test"], batch_size=BATCH_SIZE, shuffle=False, collate_fn=data_collator) # type: ignore
+```
+
+### 3.2.4. Diseño de la estrategia de entrenamiento
+
+```python
+optimizer = AdamW(model_distilbert.parameters(), lr=LEARNING_RATE)
+
+num_training_steps = EPOCHS * len(train_dataloader)
+
+lr_scheduler = get_scheduler(
+    name="linear",
+    optimizer=optimizer,
+    num_warmup_steps=0,
+    num_training_steps=num_training_steps
+)
+```
+
+### 3.2.5. Entrenamiento y evaluación del modelo
+
+```python
+# Historial
+train_losses_distilbert = []
+val_losses_distilbert   = []
+test_losses_distilbert  = []
+
+train_accuracies_distilbert = []
+val_accuracies_distilbert   = []
+test_accuracies_distilbert  = []
+
+# Early stopping
+best_val_loss              = float("inf")
+epochs_without_improvement = 0
+
+for epoch in range(EPOCHS):
+
+    print(f"\nÉPOCA {epoch + 1}/{EPOCHS}")
+
+    # ── TRAIN ──────────────────────────────────────────────
+    model_distilbert.train()
+
+    total_train_loss  = 0
+    train_predictions = []
+    train_labels_list = []
+
+    progress_bar = tqdm(train_dataloader)
+
+    for batch in progress_bar:
+
+        batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+        outputs = model_distilbert(**batch)
+        loss    = outputs.loss
+        logits  = outputs.logits
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        lr_scheduler.step()
+
+        total_train_loss += loss.item()
+
+        predictions = torch.argmax(logits, dim=-1)
+        train_predictions.extend(predictions.cpu().numpy())
+        train_labels_list.extend(batch["labels"].cpu().numpy())
+
+        progress_bar.set_postfix({"loss": loss.item()})
+
+    avg_train_loss = total_train_loss / len(train_dataloader)
+    train_accuracy = accuracy_score(train_labels_list, train_predictions)
+
+    train_losses_distilbert.append(avg_train_loss)
+    train_accuracies_distilbert.append(train_accuracy)
+
+    model_distilbert.eval()
+
+    # ── VALIDACIÓN ─────────────────────────────────────────
+    total_val_loss  = 0
+    val_predictions = []
+    val_labels_list = []
+
+    with torch.no_grad():
+        for batch in val_dataloader:
+            batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+            outputs = model_distilbert(**batch)
+            total_val_loss += outputs.loss.item()
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            val_predictions.extend(predictions.cpu().numpy())
+            val_labels_list.extend(batch["labels"].cpu().numpy())
+
+    avg_val_loss = total_val_loss / len(val_dataloader)
+    val_accuracy = accuracy_score(val_labels_list, val_predictions)
+
+    val_losses_distilbert.append(avg_val_loss)
+    val_accuracies_distilbert.append(val_accuracy)
+
+    # ── TEST (solo seguimiento) ─────────────────────────────
+    total_test_loss  = 0
+    test_predictions = []
+    test_labels_list = []
+
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+            outputs = model_distilbert(**batch)
+            total_test_loss += outputs.loss.item()
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            test_predictions.extend(predictions.cpu().numpy())
+            test_labels_list.extend(batch["labels"].cpu().numpy())
+
+    avg_test_loss = total_test_loss / len(test_dataloader)
+    test_accuracy = accuracy_score(test_labels_list, test_predictions)
+
+    test_losses_distilbert.append(avg_test_loss)
+    test_accuracies_distilbert.append(test_accuracy)
+
+    # ── RESULTADOS ─────────────────────────────────────────
+    print(f"Train Loss: {avg_train_loss:.4f} | Train Accuracy: {train_accuracy:.4f}")
+    print(f"Val Loss:   {avg_val_loss:.4f} | Val Accuracy:   {val_accuracy:.4f}")
+    print(f"Test Loss:  {avg_test_loss:.4f} | Test Accuracy:  {test_accuracy:.4f}")
+
+    # ── EARLY STOPPING ─────────────────────────────────────
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        epochs_without_improvement = 0
+        torch.save(
+            model_distilbert.state_dict(),
+            r"../models/best_distilbert_imdb.pt"
+        )
+        print(f"  Mejor modelo guardado (val_loss={best_val_loss:.4f})")
+    else:
+        epochs_without_improvement += 1
+        print(f"  Sin mejora ({epochs_without_improvement}/{PATIENCE})")
+        if epochs_without_improvement >= PATIENCE:
+            print(f"\nEarly stopping activado en época {epoch + 1}.")
+            break
+```
+
+
+```python
+import json
+
+history_distilbert = {
+    "train_losses":     train_losses_distilbert,
+    "val_losses":       val_losses_distilbert,
+    "test_losses":      test_losses_distilbert,
+    "train_accuracies": train_accuracies_distilbert,
+    "val_accuracies":   val_accuracies_distilbert,
+    "test_accuracies":  test_accuracies_distilbert
+}
+
+with open(r"../models/history_distilbert_imdb.json", "w") as f:
+    json.dump(history_distilbert, f, indent=4)
+```
+
+### 3.2.6. Representación de curvas de aprendizaje
+
+```python
+epochs_range = range(1, len(train_losses_distilbert) + 1)
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# ── LOSS ───────────────────────────────────────────────────
+axes[0].plot(epochs_range, train_losses_distilbert, marker="o", label="Train Loss", color="steelblue")
+axes[0].plot(epochs_range, val_losses_distilbert,   marker="o", label="Val Loss",   color="darkorange")
+axes[0].plot(epochs_range, test_losses_distilbert,  marker="o", label="Test Loss",  color="seagreen", linestyle="--")
+axes[0].set_title("Curva de pérdida", fontsize=13)
+axes[0].set_xlabel("Época")
+axes[0].set_ylabel("Loss")
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+
+# ── ACCURACY ───────────────────────────────────────────────
+axes[1].plot(epochs_range, train_accuracies_distilbert, marker="o", label="Train Accuracy", color="steelblue")
+axes[1].plot(epochs_range, val_accuracies_distilbert,   marker="o", label="Val Accuracy",   color="darkorange")
+axes[1].plot(epochs_range, test_accuracies_distilbert,  marker="o", label="Test Accuracy",  color="seagreen", linestyle="--")
+axes[1].set_title("Curva de accuracy", fontsize=13)
+axes[1].set_xlabel("Época")
+axes[1].set_ylabel("Accuracy")
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+fig.suptitle("DistilBERT fine-tuning — IMDB Sentiment Analysis", fontsize=14, fontweight="bold")
+plt.tight_layout()
+plt.savefig(r"../models/training_curves_distilbert.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+## 3.2.7. Evaluación final sobre el conjunto de test
+
+```python
+model_distilbert.eval()
+
+test_predictions = []
+test_labels_list = []
+
+with torch.no_grad():
+    for batch in test_dataloader:
+        batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+        outputs = model_distilbert(**batch)
+        predictions = torch.argmax(outputs.logits, dim=-1)
+        test_predictions.extend(predictions.cpu().numpy())
+        test_labels_list.extend(batch["labels"].cpu().numpy())
+
+print("=== Resultados sobre Test (mejor modelo DistilBERT) ===\n")
+print(classification_report(
+    test_labels_list,
+    test_predictions,
+    target_names=["Negativo", "Positivo"]
+))
+
+# Matriz de confusión
+cm = confusion_matrix(test_labels_list, test_predictions)
+
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+            xticklabels=["Negativo", "Positivo"],
+            yticklabels=["Negativo", "Positivo"])
+plt.title("Matriz de confusión — Test set (DistilBERT)")
+plt.ylabel("Real")
+plt.xlabel("Predicho")
+plt.tight_layout()
+plt.savefig(r"../models/confusion_matrix_distilbert.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+## 3.2.8. Tiempo de inferencia sobre el test completo
+
+```python
+model_distilbert.eval()
+
+start_time = time.time()
+
+with torch.no_grad():
+    for batch in test_dataloader:
+        batch = {k: v.to(DEVICE) for k, v in batch.items()}
+        _     = model_distilbert(**batch)
+
+end_time = time.time()
+
+inference_time_distilbert = end_time - start_time
+
+print(f"Tiempo de inferencia (test completo): {inference_time_distilbert:.2f} s")
+print(f"Muestras: 25,000 | Tiempo por muestra: {inference_time_distilbert / 25000 * 1000:.3f} ms")
+```
+
+## 3.2.9. Tabla comparativa actualizada
+
+```python
+# Parámetros de cada modelo
+params_bertmini    = count_parameters(model)
+params_distilbert  = count_parameters(model_distilbert)
+
+# Accuracies finales sobre test
+acc_bertmini   = test_accuracies[2]        # época 3, índice 2 (mejor modelo)
+acc_distilbert = accuracy_score(test_labels_list, test_predictions)
+
+# Tabla
+tabla = [
+    ["bert-mini-uncased",    f"{params_bertmini:,}",   f"{acc_bertmini:.4f}",   f"{inference_time:.2f} s"],
+    ["distilbert-base-uncased", f"{params_distilbert:,}", f"{acc_distilbert:.4f}", f"{inference_time_distilbert:.2f} s"],
+]
+
+headers = ["Modelo", "Parámetros", "Accuracy (Test)", "Tiempo Inferencia"]
+
+print(tabulate(tabla, headers=headers, tablefmt="pretty"))
+```
+
