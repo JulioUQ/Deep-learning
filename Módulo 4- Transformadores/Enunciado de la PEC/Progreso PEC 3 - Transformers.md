@@ -1556,3 +1556,583 @@ Este ejercicio debes tomar el modelo preentrenado [gaunernst/bert-mini-uncased](
 7. Construye una tabla (imprimiendola adecuadamente con tabular) en la que se muestre el nombre del modelo, el número de parámetros, la accuracy sobre test y el tiempo de inferencia sobre todo el conjunto de test.
 
 </div>
+
+## 3.1. Finetuning downstream de un modelo pequeño
+
+### 3.1.1 Carga del dataset `stanfordnlp/imdb`
+
+Se ha utilizado el dataset `stanfordnlp/imdb` disponible en HuggingFace, compuesto por reseñas de películas etiquetadas según su sentimiento como positivas o negativas. Este dataset se encuentra dividido en tres subconjuntos independientes: entrenamiento (*train*), prueba (*test*) y un subconjunto adicional no supervisado (*unsupervised*).
+
+La carga del dataset se realiza mediante la librería `datasets`, que descarga automáticamente los ficheros y los almacena en caché local para reutilizaciones posteriores. Cada elemento del dataset contiene dos columnas: `text`, que almacena la reseña en texto plano, y `label`, que indica la clase asociada a cada ejemplo.
+
+```python
+# Carga del dataset
+dataset = load_dataset("stanfordnlp/imdb")
+
+print(dataset)
+```
+
+DatasetDict({
+    train: Dataset({
+        features: ['text', 'label'],
+        num_rows: 25000
+    })
+    test: Dataset({
+        features: ['text', 'label'],
+        num_rows: 25000
+    })
+    unsupervised: Dataset({
+        features: ['text', 'label'],
+        num_rows: 50000
+    })
+})
+
+### 3.1.2. Carga del modelo `gaunernst/bert-mini-uncased`
+
+Para este ejercicio, el modelo `gaunernst/bert-mini-uncased` es seleccionado desde HuggingFace. Por ser una versión reducida de BERT, una mayor eficiencia en el uso de memoria y una velocidad superior en el entrenamiento son permitidas, lográndose un equilibrio óptimo entre el coste computacional y la precisión.
+
+En primer lugar, el tokenizer es cargado para la transformación del texto en tokens numéricos. Posteriormente, el modelo preentrenado es implementado mediante `AutoModelForSequenceClassification`. Para adaptar la estructura a la clasificación de sentimiento, el parámetro `num_labels=2` es especificado, de modo que la capa de salida original es reemplazada por una cabeza de clasificación binaria.
+
+```python
+# Carga del model preentrenado
+MODEL_NAME = "gaunernst/bert-mini-uncased"
+
+# Tokenizador asociado al modelo
+tokenizer = AutoTokenizer.from_pretrained(
+    MODEL_NAME
+)
+
+# Modelo adaptado automáticamente para clasificación binaria
+model = AutoModelForSequenceClassification.from_pretrained(
+    MODEL_NAME,
+    num_labels=2
+).to(DEVICE)
+```
+Some weights of BertForSequenceClassification were not initialized from the model checkpoint at gaunernst/bert-mini-uncased and are newly initialized: ['classifier.bias', 'classifier.weight']
+You should probably TRAIN this model on a down-stream task to be able to use it for predictions and inference.
+
+### 3.1.3. Revisión de la arquitectura y número de parámetros
+
+Antes del entrenamiento, la arquitectura y el número de parámetros son analizados para estimar el coste computacional y el tamaño del modelo. En **bert-mini-uncased**, la estructura estándar de BERT es mantenida, pero bajo una configuración reducida.
+
+Dicho diseño es compuesto por:
+
+* **Embeddings** de dimensión 256.
+* **4 capas Transformer** con mecanismos de *self-attention*.
+* Una **capa final** adaptada para clasificación binaria.
+
+Mediante la reducción de capas y dimensiones, el número total de parámetros es disminuido considerablemente, por lo cual el proceso de entrenamiento es acelerado. Finalmente, la arquitectura completa y el conteo de parámetros entrenables son presentados a continuación.
+
+```python
+# Estructura del modelo
+print(model)
+
+# Numero de parametros entrenables
+print("Parámetros entrenables:", count_parameters(model))
+```
+
+BertForSequenceClassification(
+  (bert): BertModel(
+    (embeddings): BertEmbeddings(
+      (word_embeddings): Embedding(30522, 256, padding_idx=0)
+      (position_embeddings): Embedding(512, 256)
+      (token_type_embeddings): Embedding(2, 256)
+      (LayerNorm): LayerNorm((256,), eps=1e-12, elementwise_affine=True)
+      (dropout): Dropout(p=0.1, inplace=False)
+    )
+    (encoder): BertEncoder(
+      (layer): ModuleList(
+        (0-3): 4 x BertLayer(
+          (attention): BertAttention(
+            (self): BertSdpaSelfAttention(
+              (query): Linear(in_features=256, out_features=256, bias=True)
+              (key): Linear(in_features=256, out_features=256, bias=True)
+              (value): Linear(in_features=256, out_features=256, bias=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+            (output): BertSelfOutput(
+              (dense): Linear(in_features=256, out_features=256, bias=True)
+              (LayerNorm): LayerNorm((256,), eps=1e-12, elementwise_affine=True)
+              (dropout): Dropout(p=0.1, inplace=False)
+            )
+          )
+          (intermediate): BertIntermediate(
+            (dense): Linear(in_features=256, out_features=1024, bias=True)
+            (intermediate_act_fn): GELUActivation()
+          )
+          (output): BertOutput(
+            (dense): Linear(in_features=1024, out_features=256, bias=True)
+            (LayerNorm): LayerNorm((256,), eps=1e-12, elementwise_affine=True)
+            (dropout): Dropout(p=0.1, inplace=False)
+          )
+        )
+      )
+    )
+    (pooler): BertPooler(
+      (dense): Linear(in_features=256, out_features=256, bias=True)
+      (activation): Tanh()
+    )
+  )
+  (dropout): Dropout(p=0.1, inplace=False)
+  (classifier): Linear(in_features=256, out_features=2, bias=True)
+)
+Parámetros entrenables: 11171074
+
+### 3.1.4. Proceso de Tokenización
+
+Debido a que el texto sin procesar no puede ser interpretado directamente por los modelos basados en BERT, cada reseña es transformada en una secuencia de tokens numéricos mediante el tokenizer de `bert-mini-uncased`.
+
+Durante esta fase, las siguientes operaciones son aplicadas:
+
+* Truncado y Longitud Máxima: Las secuencias son limitadas automáticamente a un máximo de 256 tokens. Con esto, el contexto semántico es conservado mientras que el uso de memoria es reducido y la velocidad de ejecución es optimizada.
+* Padding Dinámico: En lugar de una longitud fija prematura, el relleno es aplicado dinámicamente durante la creación de batches para maximizar la eficiencia computacional.
+
+Finalmente, esta transformación es ejecutada sobre todos los subconjuntos del dataset a través de la función `map()`.
+
+```python
+# Tokenización del dataset
+MAX_LENGTH = 256
+
+# Función de tokenización para mapear sobre el dataset
+def tokenize_function(batch):
+    '''
+    Tokeniza un batch de textos utilizando el tokenizador preentrenado.
+     - Aplica truncation para recortar textos largos a MAX_LENGTH tokens.
+    '''
+    return tokenizer(
+        batch["text"],
+        truncation=True,
+        max_length=MAX_LENGTH
+    )
+
+# Aplicar tokenización a todo el dataset
+tokenized_dataset = dataset.map(
+    tokenize_function,
+    batched=True
+)
+```
+
+Map: 100%
+ 25000/25000 [00:14<00:00, 2026.99 examples/s]
+Map: 100%
+ 25000/25000 [00:12<00:00, 2015.88 examples/s]
+Map: 100%
+ 50000/50000 [00:26<00:00, 1967.45 examples/s]
+
+### 3.1.5. Preparación de batches para entrenamiento
+
+Una vez finalizada la tokenización, el dataset se adapta al formato de **PyTorch** para permitir un entrenamiento eficiente. Debido a las longitudes variables de las secuencias en los modelos Transformer, el **padding dinámico** es ejecutado durante la creación de batches. Mediante este proceso, los tokens de relleno son añadidos únicamente hasta alcanzar la longitud máxima de cada batch, con lo que el consumo de memoria es reducido y la velocidad del modelo es optimizada.
+
+Para la implementación de esta técnica, se emplea `DataCollatorWithPadding`, mediante el cual el `padding` es aplicado automáticamente en coordinación con el `tokenizer`. Finalmente, los subconjuntos de datos son convertidos y estructurados a través de un `DataLoader`, de modo que la iteración sobre los datos en mini-batches es facilitada durante el entrenamiento.
+
+```python
+# Padding dinámico automático
+data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
+# Eliminar columnas innecesarias
+tokenized_dataset = tokenized_dataset.remove_columns(["text"])
+
+# Renombrar label -> labels (formato esperado por HuggingFace)
+tokenized_dataset = tokenized_dataset.rename_column("label", "labels")
+
+# Dividir train en 90% train / 10% validación ANTES de set_format
+# para usar el método nativo de HuggingFace
+train_val = tokenized_dataset["train"].train_test_split(
+    test_size=0.1,
+    seed=42          # reproducibilidad
+)
+
+# Conversión a tensores PyTorch
+train_val.set_format("torch")
+tokenized_dataset["test"].set_format("torch")
+
+# DataLoaders
+BATCH_SIZE = 64
+
+train_dataloader = DataLoader(train_val["train"], batch_size=BATCH_SIZE, shuffle=True,  collate_fn=data_collator)
+val_dataloader   = DataLoader(train_val["test"],  batch_size=BATCH_SIZE, shuffle=False, collate_fn=data_collator)
+test_dataloader  = DataLoader(tokenized_dataset["test"], batch_size=BATCH_SIZE, shuffle=False, collate_fn=data_collator)
+```
+
+### 3.1.6. Diseño de la estrategia de entrenamiento
+
+En esta fase, los componentes necesarios para el `fine-tuning` del modelo son definidos. Para la optimización de los parámetros, el algoritmo **AdamW** es utilizado debido a su estabilidad en arquitecturas Transformer. Una tasa de aprendizaje reducida ($2 \times 10^{-5}$) es seleccionada para que los pesos previamente aprendidos sean ajustados de forma suave.
+
+Asimismo, la estabilidad y la convergencia son favorecidas mediante un `scheduler lineal`, por el cual la tasa de aprendizaje es reducida progresivamente. Finalmente, el número de épocas es establecido y el total de pasos de entrenamiento es calculado a partir del tamaño del `dataset` y del `batch size` seleccionado.
+
+> Parametros escogidos segun recomendacion del paper Devlin et al., 2019.
+```python
+# Hiperparámetros
+EPOCHS        = 5
+LEARNING_RATE = 2e-5
+PATIENCE      = 2
+```
+
+```python
+# Optimizador
+optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
+
+# Número total de pasos de entrenamiento
+num_training_steps = EPOCHS * len(train_dataloader)
+
+# Scheduler lineal
+lr_scheduler = get_scheduler(
+    name="linear",
+    optimizer=optimizer,
+    num_warmup_steps=0,
+    num_training_steps=num_training_steps
+)
+```
+
+### 3.1.7. Entrenamiento y evaluación del modelo
+
+Durante esta fase, los parámetros del modelo son ajustados mediante las reseñas del conjunto de entrenamiento. En cada *batch*, una **propagación hacia adelante** es realizada, la pérdida de clasificación es calculada y, tras la **propagación de gradientes hacia atrás**, los pesos son actualizados por el optimizador.
+
+Al término de cada época, la capacidad de generalización es monitorizada mediante una **evaluación sobre el conjunto de test**, donde tanto la pérdida como la *accuracy* son obtenidas. Finalmente, las métricas de entrenamiento y evaluación son almacenadas para que las curvas de aprendizaje del modelo sean representadas posteriormente.
+
+```python
+# Historial de métricas
+train_losses = []
+val_losses   = []
+test_losses  = []
+
+train_accuracies = []
+val_accuracies   = []
+test_accuracies  = []
+
+# Early stopping
+best_val_loss              = float("inf")
+epochs_without_improvement = 0
+
+# BUCLE DE ENTRENAMIENTO
+for epoch in range(EPOCHS):
+
+    print(f"\nÉPOCA {epoch + 1}/{EPOCHS}")
+
+    # ── TRAIN ──────────────────────────────────────────────
+    model.train()
+
+    total_train_loss  = 0
+    train_predictions = []
+    train_labels_list = []
+
+    progress_bar = tqdm(train_dataloader)
+
+    for batch in progress_bar:
+
+        batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+        outputs = model(**batch)
+        loss    = outputs.loss
+        logits  = outputs.logits
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+        lr_scheduler.step()
+
+        total_train_loss += loss.item()
+
+        predictions = torch.argmax(logits, dim=-1)
+        train_predictions.extend(predictions.cpu().numpy())
+        train_labels_list.extend(batch["labels"].cpu().numpy())
+
+        progress_bar.set_postfix({"loss": loss.item()})
+
+    avg_train_loss = total_train_loss / len(train_dataloader)
+    train_accuracy = accuracy_score(train_labels_list, train_predictions)
+
+    train_losses.append(avg_train_loss)
+    train_accuracies.append(train_accuracy)
+
+    model.eval()
+
+    # ── VALIDACIÓN ─────────────────────────────────────────
+    total_val_loss  = 0
+    val_predictions = []
+    val_labels_list = []
+
+    with torch.no_grad():
+        for batch in val_dataloader:
+
+            batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+            outputs = model(**batch)
+
+            total_val_loss += outputs.loss.item()
+
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            val_predictions.extend(predictions.cpu().numpy())
+            val_labels_list.extend(batch["labels"].cpu().numpy())
+
+    avg_val_loss = total_val_loss / len(val_dataloader)
+    val_accuracy = accuracy_score(val_labels_list, val_predictions)
+
+    val_losses.append(avg_val_loss)
+    val_accuracies.append(val_accuracy)
+
+    # ── TEST (solo seguimiento) ─
+    total_test_loss  = 0
+    test_predictions = []
+    test_labels_list = []
+
+    with torch.no_grad():
+        for batch in test_dataloader:
+
+            batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+            outputs = model(**batch)
+
+            total_test_loss += outputs.loss.item()
+
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            test_predictions.extend(predictions.cpu().numpy())
+            test_labels_list.extend(batch["labels"].cpu().numpy())
+
+    avg_test_loss = total_test_loss / len(test_dataloader)
+    test_accuracy = accuracy_score(test_labels_list, test_predictions)
+
+    test_losses.append(avg_test_loss)
+    test_accuracies.append(test_accuracy)
+
+    # ── RESULTADOS ─────────────────────────────────────────
+    print(f"Train Loss: {avg_train_loss:.4f} | Train Accuracy: {train_accuracy:.4f}")
+    print(f"Val Loss:   {avg_val_loss:.4f} | Val Accuracy:   {val_accuracy:.4f}")
+    print(f"Test Loss:  {avg_test_loss:.4f} | Test Accuracy:  {test_accuracy:.4f}")
+
+    # ── EARLY STOPPING (criterio: val_loss) ────────────────
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        epochs_without_improvement = 0
+        torch.save(
+            model.state_dict(),
+            r"../models/best_bert_mini_imdb.pt"
+        )
+        print(f"  Mejor modelo guardado (val_loss={best_val_loss:.4f})")
+    else:
+        epochs_without_improvement += 1
+        print(f"  Sin mejora ({epochs_without_improvement}/{PATIENCE})")
+        if epochs_without_improvement >= PATIENCE:
+            print(f"\nEarly stopping activado en época {epoch + 1}.")
+            break
+```
+
+
+ÉPOCA 1/5
+100%|██████████| 352/352 [37:30<00:00,  6.39s/it, loss=0.429]
+Train Loss: 0.4776 | Train Accuracy: 0.7752
+Val Loss:   0.3424 | Val Accuracy:   0.8536
+Test Loss:  0.3517 | Test Accuracy:  0.8472
+  Mejor modelo guardado (val_loss=0.3424)
+
+ÉPOCA 2/5
+100%|██████████| 352/352 [35:47<00:00,  6.10s/it, loss=0.427]
+Train Loss: 0.3300 | Train Accuracy: 0.8614
+Val Loss:   0.3134 | Val Accuracy:   0.8660
+Test Loss:  0.3190 | Test Accuracy:  0.8645
+  Mejor modelo guardado (val_loss=0.3134)
+
+ÉPOCA 3/5
+100%|██████████| 352/352 [39:38<00:00,  6.76s/it, loss=0.244]
+Train Loss: 0.2906 | Train Accuracy: 0.8830
+Val Loss:   0.3025 | Val Accuracy:   0.8744
+Test Loss:  0.3081 | Test Accuracy:  0.8705
+  Mejor modelo guardado (val_loss=0.3025)
+
+ÉPOCA 4/5
+100%|██████████| 352/352 [37:27<00:00,  6.38s/it, loss=0.195] 
+Train Loss: 0.2684 | Train Accuracy: 0.8918
+Val Loss:   0.3051 | Val Accuracy:   0.8764
+Test Loss:  0.3084 | Test Accuracy:  0.8722
+  Sin mejora (1/2)
+
+ÉPOCA 5/5
+100%|██████████| 352/352 [36:21<00:00,  6.20s/it, loss=0.276]
+Train Loss: 0.2563 | Train Accuracy: 0.8982
+Val Loss:   0.3025 | Val Accuracy:   0.8772
+Test Loss:  0.3073 | Test Accuracy:  0.8732
+  Sin mejora (2/2)
+
+Early stopping activado en época 5.
+
+```python
+import json
+
+# ── GUARDAR HISTORIAL DE MÉTRICAS ──────────────────────────
+history = {
+    "train_losses":      train_losses,
+    "val_losses":        val_losses,
+    "test_losses":       test_losses,
+    "train_accuracies":  train_accuracies,
+    "val_accuracies":    val_accuracies,
+    "test_accuracies":   test_accuracies
+}
+
+with open(r"../models/history_bert_mini_imdb.json", "w") as f:
+    json.dump(history, f, indent=4)
+```
+# ── CARGAR MEJOR MODELO ────────────────────────────────────
+# model.load_state_dict(torch.load(r"../models/best_bert_mini_imdb.pt"))
+
+### 3.1.8. Representación de curvas de aprendizaje
+
+Las curvas de **pérdida (*loss*)** y ***accuracy*** son representadas tanto para el entrenamiento como para la evaluación para analizar la evolución del proceso. Mediante estas gráficas, la capacidad de aprendizaje, la estabilidad, la convergencia y posibles problemas de **sobreajuste (*overfitting*)** son observados.
+
+Para facilitar la interpretación de los resultados, las métricas son almacenadas al cierre de cada época y, posteriormente, una visualización es generada mediante la librería **matplotlib**.
+
+```python
+epochs_range = range(1, len(train_losses) + 1)
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+# Curva de pérdida por época para train, validación y test
+axes[0].plot(epochs_range, train_losses, marker="o", label="Train Loss",      color="steelblue")
+axes[0].plot(epochs_range, val_losses,   marker="o", label="Val Loss",        color="darkorange")
+axes[0].plot(epochs_range, test_losses,  marker="o", label="Test Loss",       color="seagreen",  linestyle="--")
+axes[0].axvline(x=3, color="red", linestyle=":", linewidth=1.5,               label="Mejor modelo (época 3)")
+axes[0].set_title("Curva de pérdida", fontsize=13)
+axes[0].set_xlabel("Época")
+axes[0].set_ylabel("Loss")
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+
+# Curva de accuracy por época para train, validación y test
+axes[1].plot(epochs_range, train_accuracies, marker="o", label="Train Accuracy", color="steelblue")
+axes[1].plot(epochs_range, val_accuracies,   marker="o", label="Val Accuracy",   color="darkorange")
+axes[1].plot(epochs_range, test_accuracies,  marker="o", label="Test Accuracy",  color="seagreen",  linestyle="--")
+axes[1].axvline(x=3, color="red", linestyle=":", linewidth=1.5,                  label="Mejor modelo (época 3)")
+axes[1].set_title("Curva de accuracy", fontsize=13)
+axes[1].set_xlabel("Época")
+axes[1].set_ylabel("Accuracy")
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+fig.suptitle("BERT-mini fine-tuning — IMDB Sentiment Analysis", fontsize=14, fontweight="bold")
+plt.tight_layout()
+plt.savefig(r"../models/training_curves_bert_mini.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+![training_curves_bert_mini](../figures/training_curves_bert_mini.png)
+
+### 3.1.9. Evaluación final sobre el conjunto de test
+
+```python
+# Modelo en modo evaluación
+model.eval()
+
+test_predictions = []
+test_labels_list = []
+
+with torch.no_grad():
+    for batch in test_dataloader:
+        batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+        outputs = model(**batch)
+        predictions = torch.argmax(outputs.logits, dim=-1)
+        test_predictions.extend(predictions.cpu().numpy())
+        test_labels_list.extend(batch["labels"].cpu().numpy())
+
+# Classification report
+print("=== Resultados sobre Test (mejor modelo - época 3) ===\n")
+print(classification_report(
+    test_labels_list,
+    test_predictions,
+    target_names=["Negativo", "Positivo"]
+))
+
+# Matriz de confusión
+cm = confusion_matrix(test_labels_list, test_predictions)
+
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+            xticklabels=["Negativo", "Positivo"],
+            yticklabels=["Negativo", "Positivo"])
+plt.title("Matriz de confusión — Test set")
+plt.ylabel("Real")
+plt.xlabel("Predicho")
+plt.tight_layout()
+plt.savefig(r"../models/confusion_matrix_bert_mini.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+=== Resultados sobre Test (mejor modelo - época 3) ===
+
+              precision    recall  f1-score   support
+
+    Negativo       0.87      0.88      0.87     12500
+    Positivo       0.88      0.87      0.87     12500
+
+    accuracy                           0.87     25000
+   macro avg       0.87      0.87      0.87     25000
+weighted avg       0.87      0.87      0.87     25000
+
+
+![training_curves_bert_mini](../figures/training_curves_bert_mini.png)
+
+### 3.1.10. Tiempo de inferencia sobre el test completo
+
+```python
+model.eval()
+
+start_time = time.time()
+
+with torch.no_grad():
+    for batch in test_dataloader:
+        batch = {k: v.to(DEVICE) for k, v in batch.items()}
+        _     = model(**batch)
+
+end_time = time.time()
+
+inference_time = end_time - start_time
+
+print(f"Tiempo de inferencia (test completo): {inference_time:.2f} s")
+print(f"Muestras: 25,000 | Tiempo por muestra: {inference_time / 25000 * 1000:.3f} ms")
+```
+
+Tiempo de inferencia (test completo): 520.91 s
+Muestras: 25,000 | Tiempo por muestra: 20.836 ms
+
+### 3.1.11. Tabla comparativa
+
+```python
+num_params     = sum(p.numel() for p in model.parameters())
+test_acc_final = accuracy_score(test_labels_list, test_predictions)
+
+tabla = [
+    ["bert-mini-uncased", f"{num_params:,}", f"{test_acc_final:.4f}", f"{inference_time:.2f} s"]
+]
+
+headers = ["Modelo", "Parámetros", "Accuracy (Test)", "Tiempo Inferencia"]
+
+print(tabulate(tabla, headers=headers, tablefmt="pretty"))
+```
+
++-------------------+------------+-----------------+-------------------+
+|      Modelo       | Parámetros | Accuracy (Test) | Tiempo Inferencia |
++-------------------+------------+-----------------+-------------------+
+| bert-mini-uncased | 11,171,074 |     0.8732      |     520.91 s      |
++-------------------+------------+-----------------+-------------------+
+
+---
+---
+
+<div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+
+**Ejercicio 5. Finetuning downstream de un modelo grande congelando capas [1.5 pts.].**
+Vamos a probar otra estrategia, para ver cuanta accuracy podemos obtener y entender como impacta el número de parámetros tanto en los tiempos de entrenamiento como en los tiempos de inferencia.
+
+Este ejercicio debes tomar el modelo preentrenado [distilbert-base-uncased](https://huggingface.co/distilbert/distilbert-base-uncased) de hugginface y entrenarlo con los mismos datos que en el ejercicio 4.
+
+Se pide:
+
+1. Muestra en pantalla la estructura del modelo y el número de parámetros.
+2. Entrenar todos los parámetros del modelo quizás sea innecesario. Una técnica es congelar parte de las capas del modelo y únicamente entrenar el resto. Congela el número de parámetros que consideres. Explica en dos lineas el motivo de tu elección.
+3. Muestra en pantalla el número total de parámetros, los que están congelados y los que son entrenables.
+4. Entrena el modelo de forma adecuada y completa.
+5. Muestra las curvas de entrenamiento. Las gráficas deben ser claras e informativas.
+6. Finalmente, muestra los resultados sobre el conjunto de test de tu mejor modelo.
+7. Calcula cuanto tiempo cuesta hacer una inferencia sobre todo el conjunto de test.
+8. Completa la tabla de resultados (la que se inició en el ejercicio 4) añadiendo este modelo y muestrala en pantalla.
+
+
+Como referencia, en la Tabla 2 de [DistilBERT, a distilled version of BERT: smaller,
+faster, cheaper and lighter](https://arxiv.org/pdf/1910.01108) se muestra la accuracy que se puede obtener con este modelo entrenando sobre esta base de datos. Al congelar capas quizás no obtengas esa accuracy, pero debes tomar tus decisiones para obtener accuracies cercanas a esa.
+
+## 3.2.1. Carga del modelo `gaunernst/bert-mini-uncased`
