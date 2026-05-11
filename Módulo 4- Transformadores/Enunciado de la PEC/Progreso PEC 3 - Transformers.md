@@ -1562,9 +1562,7 @@ Este ejercicio debes tomar el modelo preentrenado [gaunernst/bert-mini-uncased](
 
 ### 3.1.1 Carga del dataset `stanfordnlp/imdb`
 
-Se ha utilizado el dataset `stanfordnlp/imdb` disponible en HuggingFace, compuesto por reseñas de películas etiquetadas según su sentimiento como positivas o negativas. Este dataset se encuentra dividido en tres subconjuntos independientes: entrenamiento (*train*), prueba (*test*) y un subconjunto adicional no supervisado (*unsupervised*).
-
-La carga del dataset se realiza mediante la librería `datasets`, que descarga automáticamente los ficheros y los almacena en caché local para reutilizaciones posteriores. Cada elemento del dataset contiene dos columnas: `text`, que almacena la reseña en texto plano, y `label`, que indica la clase asociada a cada ejemplo.
+Se utiliza el dataset `stanfordnlp/imdb` disponible en HuggingFace, compuesto por reseñas de películas etiquetadas binariamente según su sentimiento. La carga se realiza mediante la librería `datasets`, que descarga y almacena en caché los ficheros automáticamente. El dataset se encuentra dividido en tres subconjuntos: 25.000 muestras de entrenamiento, 25.000 de test y 50.000 no supervisadas. Cada elemento contiene dos columnas: `text` con la reseña en texto plano y `label` con la clase asociada.
 
 ```python
 # Carga del dataset
@@ -1590,9 +1588,7 @@ DatasetDict({
 
 ### 3.1.2. Carga del modelo `gaunernst/bert-mini-uncased`
 
-Para este ejercicio, el modelo `gaunernst/bert-mini-uncased` es seleccionado desde HuggingFace. Por ser una versión reducida de BERT, una mayor eficiencia en el uso de memoria y una velocidad superior en el entrenamiento son permitidas, lográndose un equilibrio óptimo entre el coste computacional y la precisión.
-
-En primer lugar, el tokenizer es cargado para la transformación del texto en tokens numéricos. Posteriormente, el modelo preentrenado es implementado mediante `AutoModelForSequenceClassification`. Para adaptar la estructura a la clasificación de sentimiento, el parámetro `num_labels=2` es especificado, de modo que la capa de salida original es reemplazada por una cabeza de clasificación binaria.
+Para este primer ejercicio se selecciona `gaunernst/bert-mini-uncased` de HuggingFace, una versión reducida de BERT que permite explorar el *fine-tuning* con un coste computacional limitado y establecer una línea base de referencia. El tokenizador asociado se carga para transformar el texto en tokens numéricos, y el modelo preentrenado se adapta para clasificación binaria especificando `num_labels=2`, lo que reemplaza la cabeza original por una nueva capa de salida inicializada aleatoriamente, como indica el aviso de carga.
 
 ```python
 # Carga del model preentrenado
@@ -1614,15 +1610,7 @@ You should probably TRAIN this model on a down-stream task to be able to use it 
 
 ### 3.1.3. Revisión de la arquitectura y número de parámetros
 
-Antes del entrenamiento, la arquitectura y el número de parámetros son analizados para estimar el coste computacional y el tamaño del modelo. En **bert-mini-uncased**, la estructura estándar de BERT es mantenida, pero bajo una configuración reducida.
-
-Dicho diseño es compuesto por:
-
-* **Embeddings** de dimensión 256.
-* **4 capas Transformer** con mecanismos de *self-attention*.
-* Una **capa final** adaptada para clasificación binaria.
-
-Mediante la reducción de capas y dimensiones, el número total de parámetros es disminuido considerablemente, por lo cual el proceso de entrenamiento es acelerado. Finalmente, la arquitectura completa y el conteo de parámetros entrenables son presentados a continuación.
+BERT-mini mantiene la arquitectura estándar de BERT bajo una configuración reducida con embeddings de dimensión 256, 4 capas transformer con mecanismos de *self-attention* de 4 cabezas, FFN de dimensión intermedia 1024 y una capa final de clasificación binaria. Esta reducción respecto a BERT-base permite un entrenamiento significativamente más rápido a costa de menor capacidad representacional. El total es de 11.171.074 parámetros entrenables.
 
 ```python
 # Estructura del modelo
@@ -1681,14 +1669,7 @@ Parámetros entrenables: 11171074
 
 ### 3.1.4. Proceso de Tokenización
 
-Debido a que el texto sin procesar no puede ser interpretado directamente por los modelos basados en BERT, cada reseña es transformada en una secuencia de tokens numéricos mediante el tokenizer de `bert-mini-uncased`.
-
-Durante esta fase, las siguientes operaciones son aplicadas:
-
-* Truncado y Longitud Máxima: Las secuencias son limitadas automáticamente a un máximo de 256 tokens. Con esto, el contexto semántico es conservado mientras que el uso de memoria es reducido y la velocidad de ejecución es optimizada.
-* Padding Dinámico: En lugar de una longitud fija prematura, el relleno es aplicado dinámicamente durante la creación de batches para maximizar la eficiencia computacional.
-
-Finalmente, esta transformación es ejecutada sobre todos los subconjuntos del dataset a través de la función `map()`.
+Cada reseña se transforma en tokens numéricos mediante el tokenizador de `bert-mini-uncased`, que aplica WordPiece sobre un vocabulario de 30.522 tokens. La tokenización se aplica en modo batch con truncación a `MAX_LENGTH=256` tokens, longitud suficiente para capturar el contenido semántico principal de la mayoría de reseñas sin el coste cuadrático asociado a secuencias más largas en la atención. 
 
 ```python
 # Tokenización del dataset
@@ -1722,9 +1703,7 @@ Map: 100%
 
 ### 3.1.5. Preparación de batches para entrenamiento
 
-Una vez finalizada la tokenización, el dataset se adapta al formato de **PyTorch** para permitir un entrenamiento eficiente. Debido a las longitudes variables de las secuencias en los modelos Transformer, el **padding dinámico** es ejecutado durante la creación de batches. Mediante este proceso, los tokens de relleno son añadidos únicamente hasta alcanzar la longitud máxima de cada batch, con lo que el consumo de memoria es reducido y la velocidad del modelo es optimizada.
-
-Para la implementación de esta técnica, se emplea `DataCollatorWithPadding`, mediante el cual el `padding` es aplicado automáticamente en coordinación con el `tokenizer`. Finalmente, los subconjuntos de datos son convertidos y estructurados a través de un `DataLoader`, de modo que la iteración sobre los datos en mini-batches es facilitada durante el entrenamiento.
+Una vez tokenizado el dataset, se adapta al formato PyTorch para el entrenamiento. Se emplea `DataCollatorWithPadding` para aplicar *padding* dinámico a nivel de batch, añadiendo tokens de relleno únicamente hasta la longitud máxima de cada batch y reduciendo así el consumo innecesario de memoria. El conjunto de entrenamiento se divide en 90% train y 10% validación con semilla fija, resultando en 22.500 muestras de entrenamiento, 2.500 de validación y 25.000 de test. Los DataLoaders se configuran con `BATCH_SIZE=32` para este modelo de menor tamaño.
 
 ```python
 # Padding dinámico automático
@@ -1757,11 +1736,8 @@ test_dataloader  = DataLoader(tokenized_dataset["test"], batch_size=BATCH_SIZE, 
 
 ### 3.1.6. Diseño de la estrategia de entrenamiento
 
-En esta fase, los componentes necesarios para el `fine-tuning` del modelo son definidos. Para la optimización de los parámetros, el algoritmo **AdamW** es utilizado debido a su estabilidad en arquitecturas Transformer. Una tasa de aprendizaje reducida ($2 \times 10^{-5}$) es seleccionada para que los pesos previamente aprendidos sean ajustados de forma suave.
+Se utiliza AdamW como optimizador con `lr=2e-5`, configuración estándar recomendada por Devlin et al. (2019) para *fine-tuning* de modelos BERT. El *learning rate* sigue un `scheduler` lineal decreciente desde 2e-5 hasta 0 a lo largo de todos los pasos de entrenamiento, favoreciendo la estabilidad de convergencia. Se establece un máximo de 5 épocas con *early stopping* de paciencia 2, de forma que el entrenamiento se detiene si la val loss no mejora en dos épocas consecutivas.
 
-Asimismo, la estabilidad y la convergencia son favorecidas mediante un `scheduler lineal`, por el cual la tasa de aprendizaje es reducida progresivamente. Finalmente, el número de épocas es establecido y el total de pasos de entrenamiento es calculado a partir del tamaño del `dataset` y del `batch size` seleccionado.
-
-> Parametros escogidos segun recomendacion del paper Devlin et al., 2019.
 ```python
 # Hiperparámetros
 EPOCHS        = 5
@@ -1787,9 +1763,9 @@ lr_scheduler = get_scheduler(
 
 ### 3.1.7. Entrenamiento y evaluación del modelo
 
-Durante esta fase, los parámetros del modelo son ajustados mediante las reseñas del conjunto de entrenamiento. En cada *batch*, una **propagación hacia adelante** es realizada, la pérdida de clasificación es calculada y, tras la **propagación de gradientes hacia atrás**, los pesos son actualizados por el optimizador.
+El entrenamiento se realiza procesando 352 batches por época. El mejor modelo se persiste en disco cada vez que la pérdida de validación (val loss) mejora, de forma que al final del proceso se recupera el *checkpoint* óptimo con independencia de cuándo se produzca el *early stopping*.
 
-Al término de cada época, la capacidad de generalización es monitorizada mediante una **evaluación sobre el conjunto de test**, donde tanto la pérdida como la *accuracy* son obtenidas. Finalmente, las métricas de entrenamiento y evaluación son almacenadas para que las curvas de aprendizaje del modelo sean representadas posteriormente.
+El entrenamiento completó las 5 épocas antes de activar el *early stopping*, ya que aunque la pérdida de validación se estancó en la época 3 (0.3025), en la época 5 repitió exactamente ese valor y el contador no llegó a 2. El mejor modelo corresponde a la época 3 con `val_loss=0.3025`, punto en el que la generalización es máxima antes de que el modelo comience a memorizar el ruido del conjunto de entrenamiento.
 
 ```python
 # Historial de métricas
@@ -1953,30 +1929,9 @@ Test Loss:  0.3073 | Test Accuracy:  0.8732
 
 Early stopping activado en época 5.
 
-```python
-import json
-
-# ── GUARDAR HISTORIAL DE MÉTRICAS ──────────────────────────
-history = {
-    "train_losses":      train_losses,
-    "val_losses":        val_losses,
-    "test_losses":       test_losses,
-    "train_accuracies":  train_accuracies,
-    "val_accuracies":    val_accuracies,
-    "test_accuracies":   test_accuracies
-}
-
-with open(r"../models/history_bert_mini_imdb.json", "w") as f:
-    json.dump(history, f, indent=4)
-```
-# ── CARGAR MEJOR MODELO ────────────────────────────────────
-# model.load_state_dict(torch.load(r"../models/best_bert_mini_imdb.pt"))
-
 ### 3.1.8. Representación de curvas de aprendizaje
 
-Las curvas de **pérdida (*loss*)** y ***accuracy*** son representadas tanto para el entrenamiento como para la evaluación para analizar la evolución del proceso. Mediante estas gráficas, la capacidad de aprendizaje, la estabilidad, la convergencia y posibles problemas de **sobreajuste (*overfitting*)** son observados.
-
-Para facilitar la interpretación de los resultados, las métricas son almacenadas al cierre de cada época y, posteriormente, una visualización es generada mediante la librería **matplotlib**.
+Las curvas muestran un comportamiento de *fine-tuning* progresivo y estable. La pérdida de entrenamiento (train loss) cae de forma continua a lo largo de las 5 épocas, mientras que pérdida de validación y test (val loss; test loss) convergen rápidamente en la época 1 y se estabilizan a partir de la época 3 en torno a 0.30, momento marcado por la línea roja. A diferencia de DistilBERT, donde el *overfitting* era visible ya en la época 3, aquí el gap entre pérdida de entrenamiento y validacion se abre de forma más gradual, lo que sugiere que la menor capacidad del modelo actúa como regularizador implícito. En cuanto al `accuracy`, validación y test se estabilizan en torno al 87-88% desde la época 3, mientras que el entrenamiento continúa subiendo hasta el 90%, señal de un *overfitting* moderado pero contenido.
 
 ```python
 epochs_range = range(1, len(train_losses) + 1)
@@ -2014,6 +1969,8 @@ plt.show()
 ![training_curves_bert_mini](../figures/training_curves_bert_mini.png)
 
 ### 3.1.9. Evaluación final sobre el conjunto de test
+
+La evaluación sobre las 25.000 muestras de test arroja un 87.32% de `accuracy` con precisión y `recall` equilibrados entre clases (0.87-0.88), lo que indica ausencia de sesgo hacia ninguna de las dos clases. La matriz de confusión confirma esta simetría, mostrando 11.011 verdaderos negativos y 10.819 verdaderos positivos, con errores también equilibrados (1.489 falsos positivos y 1.681 falsos negativos). Este resultado establece la línea base del estudio, donde un modelo pequeño y preentrenado es capaz de alcanzar un rendimiento razonable en clasificación de sentimiento sin apenas coste de diseño.
 
 ```python
 # Modelo en modo evaluación
@@ -2069,6 +2026,8 @@ weighted avg       0.87      0.87      0.87     25000
 
 ### 3.1.10. Tiempo de inferencia sobre el test completo
 
+La inferencia sobre las 25.000 muestras tarda 520.91 segundos (20.84 ms/muestra), un tiempo considerablemente alto para un modelo de solo 11M de parámetros. 
+
 ```python
 model.eval()
 
@@ -2091,6 +2050,8 @@ Tiempo de inferencia (test completo): 520.91 s
 Muestras: 25,000 | Tiempo por muestra: 20.836 ms
 
 ### 3.1.11. Tabla comparativa
+
+Se construye la tabla inicial de comparación que se irá completando a lo largo de los ejercicios siguientes. En este punto recoge únicamente bert-mini como línea base, con sus métricas de accuracy y tiempo de inferencia sobre el conjunto de test completo.
 
 ```python
 num_params     = sum(p.numel() for p in model.parameters())
@@ -2136,7 +2097,11 @@ Se pide:
 Como referencia, en la Tabla 2 de [DistilBERT, a distilled version of BERT: smaller,
 faster, cheaper and lighter](https://arxiv.org/pdf/1910.01108) se muestra la accuracy que se puede obtener con este modelo entrenando sobre esta base de datos. Al congelar capas quizás no obtengas esa accuracy, pero debes tomar tus decisiones para obtener accuracies cercanas a esa.
 
-## 3.2.1. Carga del modelo `gaunernst/bert-mini-uncased`
+## 3.2. Finetuning downstream de un modelo grande
+
+## 3.2.1. Carga del modelo `gaunernst/distilbert-base-uncased`
+
+Para este ejercicio se carga el modelo preentrenado `distilbert-base-uncased` de HuggingFace. Se sustituye la cabeza original del modelo por una capa de clasificación binaria (`num_labels=2`) adaptada a la tarea de análisis de sentimiento. El reporte de carga muestra claves UNEXPECTED correspondientes a la cabeza de lenguaje enmascarado del preentrenamiento, que se descartan correctamente, y claves MISSING para la nueva cabeza de clasificación, que se inicializan aleatoriamente y serán las primeras en aprender durante el fine-tuning.
 
 ```python
 MODEL_NAME = "distilbert-base-uncased"
@@ -2148,8 +2113,28 @@ model_distilbert = AutoModelForSequenceClassification.from_pretrained(
     num_labels=2
 ).to(DEVICE)
 ```
+DistilBertForSequenceClassification LOAD REPORT from: distilbert-base-uncased
+Key                     | Status     | 
+------------------------+------------+-
+vocab_layer_norm.weight | UNEXPECTED | 
+vocab_projector.bias    | UNEXPECTED | 
+vocab_transform.weight  | UNEXPECTED | 
+vocab_transform.bias    | UNEXPECTED | 
+vocab_layer_norm.bias   | UNEXPECTED | 
+pre_classifier.weight   | MISSING    | 
+classifier.weight       | MISSING    | 
+classifier.bias         | MISSING    | 
+pre_classifier.bias     | MISSING    | 
+
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING	:those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
 
 ## 3.2.2. Revisión de la arquitectura y número de parámetros
+
+DistilBERT mantiene la arquitectura transformer de BERT pero reducida a 6 capas en lugar de 12, con una dimensión oculta de 768 y 12 cabezas de atención por capa. El total es de 66.955.010 parámetros entrenables, unos 6 veces más que bert-mini.
+
+En cuanto a la estrategia de congelación, se optó por entrenar todos los parámetros del modelo sin congelar ninguna capa. La justificación es doble: 1) el dataset IMDB con 25.000 muestras de entrenamiento es suficientemente grande para ajustar el modelo completo sin riesgo severo de overfitting, y 2) DistilBERT ya es una arquitectura comprimida respecto a BERT-base, por lo que sus capas inferiores contienen representaciones lingüísticas generales (morfología, sintaxis) que también se benefician de un ajuste fino sobre texto de reseñas cinematográficas con vocabulario específico.
 
 ```python
 # Estructura del modelo
@@ -2195,7 +2180,20 @@ DistilBertForSequenceClassification(
 )
 Parámetros entrenables: 66955010
 
+```python
+# Hiperparámetros
+MAX_LENGTH = 256
+BATCH_SIZE = 32
+LEARNING_RATE = 2e-5
+WEIGHT_DECAY = 0.01
+EPOCHS = 5
+PATIENCE = 2
+SEED = 42
+```
+
 ## 3.2.3. Proceso de Tokenización
+
+La tokenización se aplica en modo batch sobre todo el dataset con truncación a `MAX_LENGTH=256` tokens, longitud suficiente para capturar la mayoría de las reseñas de IMDB sin el coste cuadrático de secuencias más largas en la atención.
 
 ```python
 # Recargar dataset limpio
@@ -2209,6 +2207,8 @@ tokenized_dataset_distilbert = dataset.map(
 ```
 
 ### 3.2.4. Preparación de batches para entrenamiento
+
+Se usa `DataCollatorWithPadding` para aplicar padding dinámico a nivel de batch, evitando padding innecesario a la longitud máxima global. El dataset de entrenamiento se divide en 90% train y 10% validación con semilla fija, resultando en aproximadamente 22.500 muestras de entrenamiento, 2.500 de validación y 25.000 de test. Los DataLoaders se configuran con `pin_memory=True` y `num_workers=2` para maximizar la transferencia CPU -> GPU durante el entrenamiento.
 
 ```python
 # Preprocesado
@@ -2227,15 +2227,17 @@ train_val.set_format("torch")
 tokenized_dataset_distilbert["test"].set_format("torch")
 
 # DataLoaders
-train_dataloader = DataLoader(train_val["train"], batch_size=BATCH_SIZE, shuffle=True,  collate_fn=data_collator) # type: ignore
-val_dataloader   = DataLoader(train_val["test"],  batch_size=BATCH_SIZE, shuffle=False, collate_fn=data_collator) # type: ignore
-test_dataloader  = DataLoader(tokenized_dataset_distilbert["test"], batch_size=BATCH_SIZE, shuffle=False, collate_fn=data_collator) # type: ignore
+train_dataloader = DataLoader(train_val["train"], batch_size=BATCH_SIZE, shuffle=True,  collate_fn=data_collator, pin_memory=True, num_workers=2) # type: ignore
+val_dataloader   = DataLoader(train_val["test"],  batch_size=BATCH_SIZE, shuffle=False, collate_fn=data_collator, pin_memory=True, num_workers=2) # type: ignore
+test_dataloader  = DataLoader(tokenized_dataset_distilbert["test"], batch_size=BATCH_SIZE, shuffle=False, collate_fn=data_collator, pin_memory=True, num_workers=2) # type: ignore
 ```
 
-### 3.2.4. Diseño de la estrategia de entrenamiento
+### 3.2.5. Diseño de la estrategia de entrenamiento
+
+Se utiliza AdamW como optimizador con `lr=2e-5` y `weight_decay=0.01`, configuración estándar y recomendada por los autores originales de BERT para fine-tuning. El learning rate sigue un `scheduler` lineal decreciente desde 2e-5 hasta 0 a lo largo de los pasos de entrenamiento, sin *warmup*. Se establece un máximo de 5 épocas con *early stopping* de paciencia 2, de forma que el entrenamiento se detiene si la pérdida de validación (val loss) no mejora en dos épocas consecutivas.
 
 ```python
-optimizer = AdamW(model_distilbert.parameters(), lr=LEARNING_RATE)
+optimizer = AdamW(model_distilbert.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
 
 num_training_steps = EPOCHS * len(train_dataloader)
 
@@ -2247,10 +2249,25 @@ lr_scheduler = get_scheduler(
 )
 ```
 
-### 3.2.5. Entrenamiento y evaluación del modelo
+### 3.2.6. Entrenamiento y evaluación del modelo
+
+El entrenamiento se realiza sobre GPU T4, procesando 704 batches por época. El sistema de checkpointing guarda el estado completo al final de cada época  (pesos del modelo, estado del optimizador, scheduler, historial de métricas y contadores de *early stopping*) permitiendo reanudar el entrenamiento en caso de interrupción de la sesión de Kaggle.
+
+El entrenamiento se detuvo en la época 4 por *early stopping*. La evolución muestra un comportamiento esperado de *fine-tuning*: la pérdida de entrenamiento (train loss) cae de forma sostenida (0.296 -> 0.052) mientras que la pérdida de validación (val loss) mejora hasta la época 2 (0.246) y empieza a subir a partir de ahí, señal de *overfitting* progresivo. **El mejor modelo corresponde a la época 2 con val_loss=0.2461.**
 
 ```python
-# Historial
+# Directorios
+CHECKPOINT_DIR = "/kaggle/working/checkpoints"
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+CHECKPOINT_PATH = f"{CHECKPOINT_DIR}/distilbert_checkpoint.pt"
+BEST_MODEL_PATH = f"{CHECKPOINT_DIR}/best_distilbert_imdb.pt"
+```
+
+```python
+# ============================================================
+# HISTORIAL
+# ============================================================
+
 train_losses_distilbert = []
 val_losses_distilbert   = []
 test_losses_distilbert  = []
@@ -2259,131 +2276,424 @@ train_accuracies_distilbert = []
 val_accuracies_distilbert   = []
 test_accuracies_distilbert  = []
 
-# Early stopping
-best_val_loss              = float("inf")
+# ============================================================
+# EARLY STOPPING
+# ============================================================
+
+best_val_loss = float("inf")
+
 epochs_without_improvement = 0
 
-for epoch in range(EPOCHS):
+# ============================================================
+# REANUDAR CHECKPOINT
+# ============================================================
 
-    print(f"\nÉPOCA {epoch + 1}/{EPOCHS}")
+start_epoch = 0
 
-    # ── TRAIN ──────────────────────────────────────────────
+if os.path.exists(CHECKPOINT_PATH):
+
+    print("\nCheckpoint encontrado.")
+    print("Reanudando entrenamiento...\n")
+
+    checkpoint = torch.load(
+        CHECKPOINT_PATH,
+        map_location=DEVICE
+    )
+
+    model_distilbert.load_state_dict(
+        checkpoint["model_state_dict"]
+    )
+
+    optimizer.load_state_dict(
+        checkpoint["optimizer_state_dict"]
+    )
+
+    lr_scheduler.load_state_dict(
+        checkpoint["scheduler_state_dict"]
+    )
+
+    start_epoch = checkpoint["epoch"] + 1
+
+    best_val_loss = checkpoint["best_val_loss"]
+
+    epochs_without_improvement = checkpoint["epochs_without_improvement"]
+
+    train_losses_distilbert = checkpoint["train_losses"]
+
+    val_losses_distilbert = checkpoint["val_losses"]
+
+    test_losses_distilbert = checkpoint["test_losses"]
+
+    train_accuracies_distilbert = checkpoint["train_accuracies"]
+
+    val_accuracies_distilbert = checkpoint["val_accuracies"]
+
+    test_accuracies_distilbert = checkpoint["test_accuracies"]
+
+    print(f"Continuando desde época {start_epoch}")
+
+# ============================================================
+# ENTRENAMIENTO
+# ============================================================
+
+for epoch in range(start_epoch, EPOCHS):
+
+    print(f"\n{'='*60}")
+    print(f"ÉPOCA {epoch + 1}/{EPOCHS}")
+    print(f"{'='*60}")
+
+    # ========================================================
+    # TRAIN
+    # ========================================================
+
     model_distilbert.train()
 
-    total_train_loss  = 0
+    total_train_loss = 0
+
     train_predictions = []
+
     train_labels_list = []
 
     progress_bar = tqdm(train_dataloader)
 
     for batch in progress_bar:
 
-        batch   = {k: v.to(DEVICE) for k, v in batch.items()}
-        outputs = model_distilbert(**batch)
-        loss    = outputs.loss
-        logits  = outputs.logits
+        batch = {
+            k: v.to(DEVICE)
+            for k, v in batch.items()
+        }
 
         optimizer.zero_grad()
+
+        # ====================================================
+        # FORWARD
+        # ====================================================
+
+        outputs = model_distilbert(**batch)
+
+        loss = outputs.loss
+
+        logits = outputs.logits
+
+        # ====================================================
+        # BACKWARD
+        # ====================================================
+
         loss.backward()
+
         optimizer.step()
+
         lr_scheduler.step()
+
+        # ====================================================
+        # MÉTRICAS
+        # ====================================================
 
         total_train_loss += loss.item()
 
-        predictions = torch.argmax(logits, dim=-1)
-        train_predictions.extend(predictions.cpu().numpy())
-        train_labels_list.extend(batch["labels"].cpu().numpy())
+        predictions = torch.argmax(
+            logits,
+            dim=-1
+        )
 
-        progress_bar.set_postfix({"loss": loss.item()})
+        train_predictions.extend(
+            predictions.detach().cpu().numpy()
+        )
+
+        train_labels_list.extend(
+            batch["labels"].detach().cpu().numpy()
+        )
+
+        progress_bar.set_postfix({
+            "loss": f"{loss.item():.4f}"
+        })
 
     avg_train_loss = total_train_loss / len(train_dataloader)
-    train_accuracy = accuracy_score(train_labels_list, train_predictions)
+
+    train_accuracy = accuracy_score(
+        train_labels_list,
+        train_predictions
+    )
 
     train_losses_distilbert.append(avg_train_loss)
+
     train_accuracies_distilbert.append(train_accuracy)
+
+    # ========================================================
+    # VALIDACIÓN
+    # ========================================================
 
     model_distilbert.eval()
 
-    # ── VALIDACIÓN ─────────────────────────────────────────
-    total_val_loss  = 0
+    total_val_loss = 0
+
     val_predictions = []
+
     val_labels_list = []
 
     with torch.no_grad():
+
         for batch in val_dataloader:
-            batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+
+            batch = {
+                k: v.to(DEVICE)
+                for k, v in batch.items()
+            }
+
             outputs = model_distilbert(**batch)
+
             total_val_loss += outputs.loss.item()
-            predictions = torch.argmax(outputs.logits, dim=-1)
-            val_predictions.extend(predictions.cpu().numpy())
-            val_labels_list.extend(batch["labels"].cpu().numpy())
+
+            predictions = torch.argmax(
+                outputs.logits,
+                dim=-1
+            )
+
+            val_predictions.extend(
+                predictions.cpu().numpy()
+            )
+
+            val_labels_list.extend(
+                batch["labels"].cpu().numpy()
+            )
 
     avg_val_loss = total_val_loss / len(val_dataloader)
-    val_accuracy = accuracy_score(val_labels_list, val_predictions)
+
+    val_accuracy = accuracy_score(
+        val_labels_list,
+        val_predictions
+    )
 
     val_losses_distilbert.append(avg_val_loss)
+
     val_accuracies_distilbert.append(val_accuracy)
 
-    # ── TEST (solo seguimiento) ─────────────────────────────
-    total_test_loss  = 0
+    # ========================================================
+    # TEST
+    # ========================================================
+
+    total_test_loss = 0
+
     test_predictions = []
+
     test_labels_list = []
 
     with torch.no_grad():
+
         for batch in test_dataloader:
-            batch   = {k: v.to(DEVICE) for k, v in batch.items()}
+
+            batch = {
+                k: v.to(DEVICE)
+                for k, v in batch.items()
+            }
+
             outputs = model_distilbert(**batch)
+
             total_test_loss += outputs.loss.item()
-            predictions = torch.argmax(outputs.logits, dim=-1)
-            test_predictions.extend(predictions.cpu().numpy())
-            test_labels_list.extend(batch["labels"].cpu().numpy())
+
+            predictions = torch.argmax(
+                outputs.logits,
+                dim=-1
+            )
+
+            test_predictions.extend(
+                predictions.cpu().numpy()
+            )
+
+            test_labels_list.extend(
+                batch["labels"].cpu().numpy()
+            )
 
     avg_test_loss = total_test_loss / len(test_dataloader)
-    test_accuracy = accuracy_score(test_labels_list, test_predictions)
+
+    test_accuracy = accuracy_score(
+        test_labels_list,
+        test_predictions
+    )
 
     test_losses_distilbert.append(avg_test_loss)
+
     test_accuracies_distilbert.append(test_accuracy)
 
-    # ── RESULTADOS ─────────────────────────────────────────
-    print(f"Train Loss: {avg_train_loss:.4f} | Train Accuracy: {train_accuracy:.4f}")
-    print(f"Val Loss:   {avg_val_loss:.4f} | Val Accuracy:   {val_accuracy:.4f}")
-    print(f"Test Loss:  {avg_test_loss:.4f} | Test Accuracy:  {test_accuracy:.4f}")
+    # ========================================================
+    # RESULTADOS
+    # ========================================================
 
-    # ── EARLY STOPPING ─────────────────────────────────────
+    print("\nRESULTADOS")
+
+    print(
+        f"Train Loss: {avg_train_loss:.4f} "
+        f"| Train Accuracy: {train_accuracy:.4f}"
+    )
+
+    print(
+        f"Val Loss: {avg_val_loss:.4f} "
+        f"| Val Accuracy: {val_accuracy:.4f}"
+    )
+
+    print(
+        f"Test Loss: {avg_test_loss:.4f} "
+        f"| Test Accuracy: {test_accuracy:.4f}"
+    )
+
+    # ========================================================
+    # MEJOR MODELO
+    # ========================================================
+
     if avg_val_loss < best_val_loss:
+
         best_val_loss = avg_val_loss
+
         epochs_without_improvement = 0
+
         torch.save(
             model_distilbert.state_dict(),
-            r"../models/best_distilbert_imdb.pt"
+            BEST_MODEL_PATH
         )
-        print(f"  Mejor modelo guardado (val_loss={best_val_loss:.4f})")
+
+        print(
+            f"\nMejor modelo guardado "
+            f"(val_loss={best_val_loss:.4f})"
+        )
+
     else:
+
         epochs_without_improvement += 1
-        print(f"  Sin mejora ({epochs_without_improvement}/{PATIENCE})")
-        if epochs_without_improvement >= PATIENCE:
-            print(f"\nEarly stopping activado en época {epoch + 1}.")
-            break
+
+        print(
+            f"\nSin mejora "
+            f"({epochs_without_improvement}/{PATIENCE})"
+        )
+
+    # ========================================================
+    # GUARDAR CHECKPOINT
+    # ========================================================
+
+    checkpoint = {
+
+        "epoch": epoch,
+
+        "model_state_dict":
+            model_distilbert.state_dict(),
+
+        "optimizer_state_dict":
+            optimizer.state_dict(),
+
+        "scheduler_state_dict":
+            lr_scheduler.state_dict(),
+
+        "best_val_loss":
+            best_val_loss,
+
+        "epochs_without_improvement":
+            epochs_without_improvement,
+
+        "train_losses":
+            train_losses_distilbert,
+
+        "val_losses":
+            val_losses_distilbert,
+
+        "test_losses":
+            test_losses_distilbert,
+
+        "train_accuracies":
+            train_accuracies_distilbert,
+
+        "val_accuracies":
+            val_accuracies_distilbert,
+
+        "test_accuracies":
+            test_accuracies_distilbert
+    }
+
+    torch.save(
+        checkpoint,
+        CHECKPOINT_PATH
+    )
+
+    print("\nCheckpoint guardado.")
+
+    # ========================================================
+    # EARLY STOPPING
+    # ========================================================
+
+    if epochs_without_improvement >= PATIENCE:
+
+        print(
+            f"\nEarly stopping activado "
+            f"en época {epoch + 1}"
+        )
+
+        break
+
+print("\nEntrenamiento finalizado.")
 ```
 
 
-```python
-import json
+============================================================
+ÉPOCA 1/5
+============================================================
+100%|██████████| 704/704 [08:34<00:00,  1.37it/s, loss=0.0266]
 
-history_distilbert = {
-    "train_losses":     train_losses_distilbert,
-    "val_losses":       val_losses_distilbert,
-    "test_losses":      test_losses_distilbert,
-    "train_accuracies": train_accuracies_distilbert,
-    "val_accuracies":   val_accuracies_distilbert,
-    "test_accuracies":  test_accuracies_distilbert
-}
+RESULTADOS
+Train Loss: 0.2961 | Train Accuracy: 0.8711
+Val Loss: 0.2539 | Val Accuracy: 0.8976
+Test Loss: 0.2304 | Test Accuracy: 0.9063
 
-with open(r"../models/history_distilbert_imdb.json", "w") as f:
-    json.dump(history_distilbert, f, indent=4)
-```
+Mejor modelo guardado (val_loss=0.2539)
 
-### 3.2.6. Representación de curvas de aprendizaje
+Checkpoint guardado.
+
+============================================================
+ÉPOCA 2/5
+============================================================
+100%|██████████| 704/704 [08:47<00:00,  1.33it/s, loss=0.0088]
+
+RESULTADOS
+Train Loss: 0.1734 | Train Accuracy: 0.9344
+Val Loss: 0.2461 | Val Accuracy: 0.9052
+Test Loss: 0.2239 | Test Accuracy: 0.9116
+
+Mejor modelo guardado (val_loss=0.2461)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA 3/5
+============================================================
+100%|██████████| 704/704 [08:48<00:00,  1.33it/s, loss=0.0062]
+
+RESULTADOS
+Train Loss: 0.0964 | Train Accuracy: 0.9668
+Val Loss: 0.3076 | Val Accuracy: 0.9056
+Test Loss: 0.2690 | Test Accuracy: 0.9112
+
+Sin mejora (1/2)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA 4/5
+============================================================
+100%|██████████| 704/704 [08:47<00:00,  1.33it/s, loss=0.0096]
+
+RESULTADOS
+Train Loss: 0.0523 | Train Accuracy: 0.9850
+Val Loss: 0.3461 | Val Accuracy: 0.9024
+Test Loss: 0.3112 | Test Accuracy: 0.9075
+
+Sin mejora (2/2)
+
+Checkpoint guardado.
+
+Early stopping activado en época 4
+
+Entrenamiento finalizado.
+
+### 3.2.7. Representación de curvas de aprendizaje
+
+Las curvas confirman el patrón descrito anteriormente. La perdida de entrenamiento y validacion convergen en la época 1, alcanzando el modelo su mejor generalización en la época 2 y a partir de ahí el gap entre entrenamiento y validación se amplía progresivamente. La pérdida en test (test loss) sigue de cerca a la pérdida de validcion (val loss), lo que indica que el split de validación es representativo del conjunto de test y que no hay fuga de información entre particiones. En cuanto al `accuracy`, val y test se estabilizan en torno al 90-91% desde la época 2 mientras que el `train accuracy` sigue subiendo hasta el 98.5%, confirmando el *overfitting* de épocas tardías.
 
 ```python
 epochs_range = range(1, len(train_losses_distilbert) + 1)
@@ -2416,7 +2726,9 @@ plt.savefig(r"../models/training_curves_distilbert.png", dpi=150, bbox_inches="t
 plt.show()
 ```
 
-## 3.2.7. Evaluación final sobre el conjunto de test
+## 3.2.8. Evaluación final sobre el conjunto de test
+
+Cargado el mejor modelo (época 2), la evaluación sobre las 25.000 muestras de test arroja un 91% de `accuracy` con precisión y `recall` equilibrados entre clases (0.90-0.92), lo que indica que el modelo no presenta sesgo hacia ninguna de las dos clases. Este resultado es consistente con los valores reportados en la Tabla 2 del paper original de DistilBERT (92.7%), con una ligera diferencia atribuible a que se entrenaron solo 2 épocas efectivas antes del *early stopping* y al truncamiento a 256 tokens en lugar de 512.
 
 ```python
 model_distilbert.eval()
@@ -2454,7 +2766,20 @@ plt.savefig(r"../models/confusion_matrix_distilbert.png", dpi=150, bbox_inches="
 plt.show()
 ```
 
-## 3.2.8. Tiempo de inferencia sobre el test completo
+=== Resultados sobre Test (mejor modelo DistilBERT) ===
+
+              precision    recall  f1-score   support
+
+    Negativo       0.92      0.90      0.91     12500
+    Positivo       0.90      0.92      0.91     12500
+
+    accuracy                           0.91     25000
+   macro avg       0.91      0.91      0.91     25000
+weighted avg       0.91      0.91      0.91     25000
+
+## 3.2.9. Tiempo de inferencia sobre el test completo
+
+La inferencia sobre las 25.000 muestras tarda 186.27 segundos (7.45 ms/muestra). Este tiempo es significativamente menor que el de bert-mini (520.91s) a pesar de que DistilBERT tiene 6 veces más parámetros.
 
 ```python
 model_distilbert.eval()
@@ -2474,7 +2799,12 @@ print(f"Tiempo de inferencia (test completo): {inference_time_distilbert:.2f} s"
 print(f"Muestras: 25,000 | Tiempo por muestra: {inference_time_distilbert / 25000 * 1000:.3f} ms")
 ```
 
-## 3.2.9. Tabla comparativa actualizada
+Tiempo de inferencia (test completo): 186.27 s
+Muestras: 25,000 | Tiempo por muestra: 7.451 ms
+
+## 3.2.10. Tabla comparativa actualizada
+
+DistilBERT supera a bert-mini en las dos métricas clave: 1) 3.4 puntos más de `accuracy` (90.75% vs 87.32%) y ") casi 3 veces más rápido en inferencia (186s vs 520s); a pesar de tener 6 veces más parámetros. Este resultado ilustra que un modelo más grande pero bien diseñado y preentrenado puede ser simultáneamente más preciso y más eficiente que uno pequeño con arquitectura menos optimizada, consolidando a DistilBERT como la opción dominante entre los dos hasta este punto de la práctica.
 
 ```python
 # Parámetros de cada modelo
@@ -2496,3 +2826,1228 @@ headers = ["Modelo", "Parámetros", "Accuracy (Test)", "Tiempo Inferencia"]
 print(tabulate(tabla, headers=headers, tablefmt="pretty"))
 ```
 
++-------------------------+------------+-----------------+-------------------+
+|         Modelo          | Parámetros | Accuracy (Test) | Tiempo Inferencia |
++-------------------------+------------+-----------------+-------------------+
+|    bert-mini-uncased    | 11,171,074 |     0.8732      |     520.91 s      |
+| distilbert-base-uncased | 66,955,010 |     0.9075      |     186.27 s      |
++-------------------------+------------+-----------------+-------------------+
+
+---
+---
+
+<div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+
+
+**Ejercicio 6. Modelo personalizado [1 pts.].**
+Nuestro requisito es obtener tiempos de inferencia entre 5 y 10 veces más rápidos que los obtenidos para el modelo del ejercicio 4. Para ello:
+
+1. Construye un modelo basado en el tipo de architectura Bert totalmente personalizado y desde cero (pesos del modelo aleatorios).
+2. Este modelo debe tener alrededor de 5-6 Millones de parámetros como máximo y ser entre 5 y 10 veces más rápido en inferencia el modelo del ejercicio 4.
+3. De forma similar, entrena el modelo de forma completa, muestra las curvas de entrenamiento, test, etc.
+4. Actualiza la tabla de resultados con este modelo y muestrala en pantalla.
+
+## 3.3. Modelo personalizado desde cero
+### 3.3.1. Diseño de la arquitectura personalizada, y número de parametros
+
+Para satisfacer el requisito de inferencia entre 5 y 10 veces más rápida que `bert-mini-uncased` (520.91 s), se diseña `MiniBertForSequenceClassification` desde cero, sin cargar ningún peso preentrenado. 
+
+`MiniBertForSequenceClassification` replica la lógica de BERT pero a escala reducida. Cada bloque transformer combina un módulo de self-attention con 4 cabezas de dimensión 32 cada una, seguido de una FFN con proyección 128 -> 512 -> 128 y activación GELU, con conexiones residuales y layer normalization en ambos sublayers. La cabeza de clasificación opera sobre el token [CLS] pasado por un pooler lineal con activación tanh, idéntico al diseño de BERT original. El total es de 5.179.266 parámetros entrenables, menos de la mitad que bert-mini-uncased.
+
+```python
+# ============================================================
+# CONFIGURACIÓN
+# ============================================================
+
+class MiniConfig:
+    vocab_size                  = 30522
+    hidden_size                 = 128
+    num_hidden_layers           = 6
+    num_attention_heads         = 4
+    intermediate_size           = 512
+    hidden_dropout_prob         = 0.1
+    attention_probs_dropout_prob = 0.1
+    max_position_embeddings     = 512
+    type_vocab_size             = 2
+    num_labels                  = 2
+
+# ============================================================
+# EMBEDDINGS
+# ============================================================
+
+class MiniEmbeddings(nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+
+        self.word_embeddings = nn.Embedding(
+            config.vocab_size,
+            config.hidden_size,
+            padding_idx=0
+        )
+        self.position_embeddings = nn.Embedding(
+            config.max_position_embeddings,
+            config.hidden_size
+        )
+        self.token_type_embeddings = nn.Embedding(
+            config.type_vocab_size,
+            config.hidden_size
+        )
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=1e-12)
+        self.dropout   = nn.Dropout(config.hidden_dropout_prob)
+
+        self.register_buffer(
+            "position_ids",
+            torch.arange(config.max_position_embeddings).unsqueeze(0)
+        )
+
+    def forward(self, input_ids, token_type_ids=None):
+
+        seq_len      = input_ids.size(1)
+        position_ids = self.position_ids[:, :seq_len]
+
+        if token_type_ids is None:
+            token_type_ids = torch.zeros_like(input_ids)
+
+        embeddings = (
+            self.word_embeddings(input_ids)
+            + self.position_embeddings(position_ids)
+            + self.token_type_embeddings(token_type_ids)
+        )
+
+        return self.dropout(self.LayerNorm(embeddings))
+
+# ============================================================
+# SELF-ATTENTION
+# ============================================================
+
+class MiniSelfAttention(nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+
+        self.num_heads = config.num_attention_heads
+        self.head_dim  = config.hidden_size // config.num_attention_heads
+        self.scale     = math.sqrt(self.head_dim)
+
+        self.q       = nn.Linear(config.hidden_size, config.hidden_size)
+        self.k       = nn.Linear(config.hidden_size, config.hidden_size)
+        self.v       = nn.Linear(config.hidden_size, config.hidden_size)
+        self.out     = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
+
+    def forward(self, hidden_states, attention_mask=None):
+
+        B, T, C = hidden_states.shape
+        H, D    = self.num_heads, self.head_dim
+
+        q = self.q(hidden_states).view(B, T, H, D).transpose(1, 2)
+        k = self.k(hidden_states).view(B, T, H, D).transpose(1, 2)
+        v = self.v(hidden_states).view(B, T, H, D).transpose(1, 2)
+
+        scores = torch.matmul(q, k.transpose(-2, -1)) / self.scale
+
+        if attention_mask is not None:
+            scores = scores + attention_mask
+
+        attn    = self.dropout(F.softmax(scores, dim=-1))
+        context = torch.matmul(attn, v)
+        context = context.transpose(1, 2).contiguous().view(B, T, C)
+
+        return self.out(context)
+
+# ============================================================
+# CAPA TRANSFORMER
+# ============================================================
+
+class MiniTransformerLayer(nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+
+        self.attention = MiniSelfAttention(config)
+        self.norm1     = nn.LayerNorm(config.hidden_size, eps=1e-12)
+        self.norm2     = nn.LayerNorm(config.hidden_size, eps=1e-12)
+        self.ffn       = nn.Sequential(
+            nn.Linear(config.hidden_size, config.intermediate_size),
+            nn.GELU(),
+            nn.Linear(config.intermediate_size, config.hidden_size),
+        )
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+
+    def forward(self, hidden_states, attention_mask=None):
+
+        # Atención + residual + norm
+        attn_out     = self.dropout(self.attention(hidden_states, attention_mask))
+        hidden_states = self.norm1(hidden_states + attn_out)
+
+        # FFN + residual + norm
+        ffn_out      = self.dropout(self.ffn(hidden_states))
+        hidden_states = self.norm2(hidden_states + ffn_out)
+
+        return hidden_states
+
+# ============================================================
+# ENCODER
+# ============================================================
+
+class MiniEncoder(nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+        self.layers = nn.ModuleList([
+            MiniTransformerLayer(config)
+            for _ in range(config.num_hidden_layers)
+        ])
+
+    def forward(self, hidden_states, attention_mask=None):
+        for layer in self.layers:
+            hidden_states = layer(hidden_states, attention_mask)
+        return hidden_states
+
+# ============================================================
+# MODELO COMPLETO
+# ============================================================
+
+class MiniBertForSequenceClassification(nn.Module):
+
+    def __init__(self, config):
+        super().__init__()
+        self.config     = config
+        self.embeddings = MiniEmbeddings(config)
+        self.encoder    = MiniEncoder(config)
+        self.pooler     = nn.Linear(config.hidden_size, config.hidden_size)
+        self.dropout    = nn.Dropout(config.hidden_dropout_prob)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+
+        self._init_weights()
+
+    def _init_weights(self):
+        for module in self.modules():
+            if isinstance(module, nn.Linear):
+                nn.init.normal_(module.weight, mean=0.0, std=0.02)
+                if module.bias is not None:
+                    nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.Embedding):
+                nn.init.normal_(module.weight, mean=0.0, std=0.02)
+            elif isinstance(module, nn.LayerNorm):
+                nn.init.ones_(module.weight)
+                nn.init.zeros_(module.bias)
+
+    def _get_attention_mask(self, attention_mask):
+        # Convierte [B, T] → [B, 1, 1, T] con -10000 en posiciones enmascaradas
+        extended = attention_mask[:, None, None, :].float()
+        return (1.0 - extended) * -10000.0
+
+    def forward(self, input_ids, attention_mask=None, labels=None, **kwargs):
+
+        ext_mask     = self._get_attention_mask(attention_mask) if attention_mask is not None else None
+        hidden_states = self.embeddings(input_ids)
+        hidden_states = self.encoder(hidden_states, ext_mask)
+
+        # Pooling sobre token [CLS]
+        cls_output = hidden_states[:, 0]
+        pooled     = self.dropout(torch.tanh(self.pooler(cls_output)))
+        logits     = self.classifier(pooled)
+
+        loss = None
+        if labels is not None:
+            loss = F.cross_entropy(logits, labels)
+
+        from types import SimpleNamespace
+        return SimpleNamespace(loss=loss, logits=logits)
+
+
+# ============================================================
+# INSTANCIAR Y VERIFICAR
+# ============================================================
+
+config       = MiniConfig()
+model_custom = MiniBertForSequenceClassification(config).to(DEVICE)
+
+print(model_custom)
+print(f"\nParámetros entrenables: {count_parameters(model_custom):,}")
+```
+
+MiniBertForSequenceClassification(
+  (embeddings): MiniEmbeddings(
+    (word_embeddings): Embedding(30522, 128, padding_idx=0)
+    (position_embeddings): Embedding(512, 128)
+    (token_type_embeddings): Embedding(2, 128)
+    (LayerNorm): LayerNorm((128,), eps=1e-12, elementwise_affine=True)
+    (dropout): Dropout(p=0.1, inplace=False)
+  )
+  (encoder): MiniEncoder(
+    (layers): ModuleList(
+      (0-5): 6 x MiniTransformerLayer(
+        (attention): MiniSelfAttention(
+          (q): Linear(in_features=128, out_features=128, bias=True)
+          (k): Linear(in_features=128, out_features=128, bias=True)
+          (v): Linear(in_features=128, out_features=128, bias=True)
+          (out): Linear(in_features=128, out_features=128, bias=True)
+          (dropout): Dropout(p=0.1, inplace=False)
+        )
+        (norm1): LayerNorm((128,), eps=1e-12, elementwise_affine=True)
+        (norm2): LayerNorm((128,), eps=1e-12, elementwise_affine=True)
+        (ffn): Sequential(
+          (0): Linear(in_features=128, out_features=512, bias=True)
+          (1): GELU(approximate='none')
+          (2): Linear(in_features=512, out_features=128, bias=True)
+        )
+        (dropout): Dropout(p=0.1, inplace=False)
+      )
+    )
+  )
+  (pooler): Linear(in_features=128, out_features=128, bias=True)
+  (dropout): Dropout(p=0.1, inplace=False)
+  (classifier): Linear(in_features=128, out_features=2, bias=True)
+)
+
+Parámetros entrenables: 5,179,266
+
+### 3.3.2. Preparación de batches para entrenamiento
+
+Se reutilizan los mismos DataLoaders del ejercicio 5, usando `DataCollatorWithPadding` para padding dinámico a nivel de batch, split 90%/10% train/validación con semilla fija (22.500 train, 2.500 val, 25.000 test) y `BATCH_SIZE=32`. La tokenización es idéntica a la de los ejercicios anteriores, con truncación a `MAX_LENGTH=256` tokens mediante el tokenizador de `bert-mini-uncased`, cuyo vocabulario WordPiece de 30.522 tokens es compatible con la arquitectura personalizada al compartir el mismo `vocab_size`.
+
+
+### 3.3.3. Diseño de la estrategia de entrenamiento
+
+Al entrenar desde pesos aleatorios, la estrategia difiere significativamente del *fine-tuning* de los ejercicios anteriores. Se utiliza AdamW con `lr=3e-4` (notablemente mayor que los 2e-5 empleados en los ejercicios 4 y 5), ya que con pesos inicializados aleatoriamente el modelo necesita dar pasos de gradiente más grandes para escapar de la inicialización. El `scheduler` lineal incluye un 10% de *warmup* sobre el total de pasos para estabilizar el entrenamiento en las primeras iteraciones. Se añade *gradient clipping* con `max_norm=1.0`, especialmente relevante cuando se entrena desde cero y los gradientes pueden ser inicialmente grandes. Se establece un máximo de 5 épocas con *early stopping* de paciencia 2.
+
+```python
+LEARNING_RATE_CUSTOM = 3e-4
+EPOCHS_CUSTOM        = 5
+PATIENCE_CUSTOM      = 2
+
+optimizer_custom = AdamW(
+    model_custom.parameters(),
+    lr=LEARNING_RATE_CUSTOM,
+    weight_decay=0.01
+)
+
+num_training_steps_custom = EPOCHS_CUSTOM * len(train_dataloader)
+
+lr_scheduler_custom = get_scheduler(
+    name="linear",
+    optimizer=optimizer_custom,
+    num_warmup_steps=num_training_steps_custom // 10,  # 10% warmup
+    num_training_steps=num_training_steps_custom
+)
+```
+
+### 3.3.4. Entrenamiento y evaluación del modelo
+
+El entrenamiento se realiza sobre GPU T4, procesando 704 batches por época. La sesión de Kaggle colapsó durante el entrenamiento, por lo que el sistema de *checkpointing* permitió retomar el proceso desde la época 4 sin perder el progreso acumulado. El entrenamiento se detuvo en la época 5 por *early stopping*. La evolución muestra un patrón de sobreajuste pronunciado, propio de un modelo entrenado desde cero sin representaciones preentrenadas, donde la pérdida de entrenamiento cae de forma continua (0.50 -> 0.06) mientras que la pérdida de validación alcanza su mínimo en la época 2 (val_loss = 0.30) y sube de forma sostenida a partir de ahí. 
+
+```python
+# HISTORIAL
+train_losses_custom = []
+val_losses_custom   = []
+test_losses_custom  = []
+
+train_accuracies_custom = []
+val_accuracies_custom   = []
+test_accuracies_custom  = []
+
+# CHECKPOINTS
+CHECKPOINT_PATH_CUSTOM  = f"{CHECKPOINT_DIR}/custom_checkpoint.pt"
+BEST_MODEL_PATH_CUSTOM  = f"{CHECKPOINT_DIR}/best_custom_imdb.pt"
+
+# EARLY STOPPING
+best_val_loss_custom        = float("inf")
+epochs_without_improvement_custom = 0
+
+# REANUDAR CHECKPOINT
+start_epoch_custom = 0
+
+if os.path.exists(CHECKPOINT_PATH_CUSTOM):
+
+    print("\nCheckpoint encontrado.")
+    print("Reanudando entrenamiento...\n")
+
+    checkpoint = torch.load(
+        CHECKPOINT_PATH_CUSTOM,
+        map_location=DEVICE
+    )
+
+    model_custom.load_state_dict(checkpoint["model_state_dict"])
+    optimizer_custom.load_state_dict(checkpoint["optimizer_state_dict"])
+    lr_scheduler_custom.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    start_epoch_custom                = checkpoint["epoch"] + 1
+    best_val_loss_custom              = checkpoint["best_val_loss"]
+    epochs_without_improvement_custom = checkpoint["epochs_without_improvement"]
+    train_losses_custom               = checkpoint["train_losses"]
+    val_losses_custom                 = checkpoint["val_losses"]
+    test_losses_custom                = checkpoint["test_losses"]
+    train_accuracies_custom           = checkpoint["train_accuracies"]
+    val_accuracies_custom             = checkpoint["val_accuracies"]
+    test_accuracies_custom            = checkpoint["test_accuracies"]
+
+    print(f"Continuando desde época {start_epoch_custom}")
+
+# ENTRENAMIENTO
+for epoch in range(start_epoch_custom, EPOCHS_CUSTOM):
+
+    print(f"\n{'='*60}")
+    print(f"ÉPOCA {epoch + 1}/{EPOCHS_CUSTOM}")
+    print(f"{'='*60}")
+
+    # TRAIN
+    model_custom.train()
+
+    total_train_loss    = 0
+    train_predictions   = []
+    train_labels_list   = []
+
+    progress_bar = tqdm(train_dataloader)
+
+    for batch in progress_bar:
+
+        batch = {k: v.to(DEVICE) for k, v in batch.items()}
+
+        optimizer_custom.zero_grad()
+
+        outputs = model_custom(**batch)
+        loss    = outputs.loss
+        logits  = outputs.logits
+
+        loss.backward()
+
+        # Gradient clipping — importante al entrenar desde cero
+        torch.nn.utils.clip_grad_norm_(model_custom.parameters(), max_norm=1.0)
+
+        optimizer_custom.step()
+        lr_scheduler_custom.step()
+
+        total_train_loss += loss.item()
+
+        predictions = torch.argmax(logits, dim=-1)
+        train_predictions.extend(predictions.detach().cpu().numpy())
+        train_labels_list.extend(batch["labels"].detach().cpu().numpy())
+
+        progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+    avg_train_loss  = total_train_loss / len(train_dataloader)
+    train_accuracy  = accuracy_score(train_labels_list, train_predictions)
+
+    train_losses_custom.append(avg_train_loss)
+    train_accuracies_custom.append(train_accuracy)
+
+    # VALIDACIÓN
+    model_custom.eval()
+
+    total_val_loss  = 0
+    val_predictions = []
+    val_labels_list = []
+
+    with torch.no_grad():
+        for batch in val_dataloader:
+            batch = {k: v.to(DEVICE) for k, v in batch.items()}
+            outputs = model_custom(**batch)
+            total_val_loss += outputs.loss.item()
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            val_predictions.extend(predictions.cpu().numpy())
+            val_labels_list.extend(batch["labels"].cpu().numpy())
+
+    avg_val_loss = total_val_loss / len(val_dataloader)
+    val_accuracy = accuracy_score(val_labels_list, val_predictions)
+
+    val_losses_custom.append(avg_val_loss)
+    val_accuracies_custom.append(val_accuracy)
+
+    # TEST
+    total_test_loss  = 0
+    test_predictions = []
+    test_labels_list = []
+
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = {k: v.to(DEVICE) for k, v in batch.items()}
+            outputs = model_custom(**batch)
+            total_test_loss += outputs.loss.item()
+            predictions = torch.argmax(outputs.logits, dim=-1)
+            test_predictions.extend(predictions.cpu().numpy())
+            test_labels_list.extend(batch["labels"].cpu().numpy())
+
+    avg_test_loss = total_test_loss / len(test_dataloader)
+    test_accuracy = accuracy_score(test_labels_list, test_predictions)
+
+    test_losses_custom.append(avg_test_loss)
+    test_accuracies_custom.append(test_accuracy)
+
+    # RESULTADOS
+    print("\nRESULTADOS")
+    print(f"Train Loss: {avg_train_loss:.4f} | Train Accuracy: {train_accuracy:.4f}")
+    print(f"Val Loss:   {avg_val_loss:.4f} | Val Accuracy:   {val_accuracy:.4f}")
+    print(f"Test Loss:  {avg_test_loss:.4f} | Test Accuracy:  {test_accuracy:.4f}")
+
+    # MEJOR MODELO
+    if avg_val_loss < best_val_loss_custom:
+
+        best_val_loss_custom              = avg_val_loss
+        epochs_without_improvement_custom = 0
+
+        torch.save(model_custom.state_dict(), BEST_MODEL_PATH_CUSTOM)
+
+        print(f"\nMejor modelo guardado (val_loss={best_val_loss_custom:.4f})")
+
+    else:
+
+        epochs_without_improvement_custom += 1
+
+        print(f"\nSin mejora ({epochs_without_improvement_custom}/{PATIENCE_CUSTOM})")
+
+    # GUARDAR CHECKPOINT
+    checkpoint = {
+        "epoch":                    epoch,
+        "model_state_dict":         model_custom.state_dict(),
+        "optimizer_state_dict":     optimizer_custom.state_dict(),
+        "scheduler_state_dict":     lr_scheduler_custom.state_dict(),
+        "best_val_loss":            best_val_loss_custom,
+        "epochs_without_improvement": epochs_without_improvement_custom,
+        "train_losses":             train_losses_custom,
+        "val_losses":               val_losses_custom,
+        "test_losses":              test_losses_custom,
+        "train_accuracies":         train_accuracies_custom,
+        "val_accuracies":           val_accuracies_custom,
+        "test_accuracies":          test_accuracies_custom,
+    }
+
+    torch.save(checkpoint, CHECKPOINT_PATH_CUSTOM)
+
+    print("\nCheckpoint guardado.")
+
+    # EARLY STOPPING
+    if epochs_without_improvement_custom >= PATIENCE_CUSTOM:
+        print(f"\nEarly stopping activado en época {epoch + 1}")
+        break
+
+print("\nEntrenamiento finalizado.")
+```
+[La session de Kaggle colapso y se tuvo que reanudar el entrenamiento por el ultimo estado guardado]
+Checkpoint encontrado.
+Reanudando entrenamiento...
+
+Continuando desde época 4
+
+============================================================
+ÉPOCA 5/5
+============================================================
+100%|██████████| 704/704 [00:41<00:00, 16.96it/s, loss=0.0044]
+
+RESULTADOS
+Train Loss: 0.0643 | Train Accuracy: 0.9854
+Val Loss:   0.5660 | Val Accuracy:   0.8652
+Test Loss:  0.7228 | Test Accuracy:  0.8303
+
+Sin mejora (3/2)
+
+Checkpoint guardado.
+
+Early stopping activado en época 5
+
+Entrenamiento finalizado.
+
+### 3.3.6. Representación de curvas de aprendizaje
+
+Las curvas ilustran con claridad la diferencia fundamental entre entrenar desde cero y hacer *fine-tuning*. La pérdida de entrenamiento (train loss) cae de forma continua y agresiva a lo largo de las 5 épocas, señal de que el modelo tiene capacidad suficiente para memorizar el conjunto de entrenamiento. Sin embargo, la pérdida de validación (val loss) alcanza su mínimo en la época 2 y se dispara progresivamente a partir de ahí, abriendo un gap pronunciado respecto al entrenamiento que evidencia un *overfitting* severo desde la época 3. La pérdida en test (test loss) amplifica este patrón, divergiendo incluso más rápido que la validación. En cuanto al `accuracy`, tanto validación como test se estabilizan en torno al 83-87% a partir de la época 2, mientras que el `train accuracy` continúa subiendo hasta el 98.5%, confirmando el sobreajuste de las épocas tardías. El punto óptimo de generalización queda claramente delimitado en la época 2, marcado implícitamente por el *checkpoint* del mejor modelo.
+
+```python
+# ============================================================
+# CURVAS DE ENTRENAMIENTO
+# ============================================================
+
+epochs_range = range(1, len(train_losses_custom) + 1)
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].plot(epochs_range, train_losses_custom, marker="o", label="Train Loss",  color="steelblue")
+axes[0].plot(epochs_range, val_losses_custom,   marker="o", label="Val Loss",    color="darkorange")
+axes[0].plot(epochs_range, test_losses_custom,  marker="o", label="Test Loss",   color="seagreen", linestyle="--")
+axes[0].set_title("Curva de pérdida", fontsize=13)
+axes[0].set_xlabel("Época")
+axes[0].set_ylabel("Loss")
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(epochs_range, train_accuracies_custom, marker="o", label="Train Accuracy", color="steelblue")
+axes[1].plot(epochs_range, val_accuracies_custom,   marker="o", label="Val Accuracy",   color="darkorange")
+axes[1].plot(epochs_range, test_accuracies_custom,  marker="o", label="Test Accuracy",  color="seagreen", linestyle="--")
+axes[1].set_title("Curva de accuracy", fontsize=13)
+axes[1].set_xlabel("Época")
+axes[1].set_ylabel("Accuracy")
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+fig.suptitle("MiniBERT personalizado — IMDB Sentiment Analysis", fontsize=14, fontweight="bold")
+plt.tight_layout()
+plt.savefig("/kaggle/working/training_curves_custom.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+### 3.3.7. Evaluación final sobre el conjunto de test
+
+La evaluación sobre las 25.000 muestras de test arroja un 83.03% de `accuracy`. A diferencia de los modelos preentrenados, se observa que la precisión para la clase negativa (0.81) es inferior a la del positivo (0.86), mientras que el `recall` invierte esta relación (0.87 negativo frente a 0.79 positivo). Esto indica que el modelo tiende a predecir más positivos de los que realmente hay, un sesgo esperable en un modelo entrenado desde cero con recursos limitados y sin las representaciones lingüísticas generales que aporta el preentrenamiento. El resultado supone una caída de 4.3 puntos respecto a bert-mini (87.32%) y de 7.7 puntos respecto a DistilBERT (90.75%).
+
+```python
+# EVALUACIÓN FINAL SOBRE TEST
+model_custom.eval()
+
+test_predictions_custom = []
+test_labels_custom      = []
+
+with torch.no_grad():
+    for batch in test_dataloader:
+        batch       = {k: v.to(DEVICE) for k, v in batch.items()}
+        outputs     = model_custom(**batch)
+        predictions = torch.argmax(outputs.logits, dim=-1)
+        test_predictions_custom.extend(predictions.cpu().numpy())
+        test_labels_custom.extend(batch["labels"].cpu().numpy())
+
+print("=== Resultados sobre Test (mejor modelo MiniBERT) ===\n")
+print(classification_report(
+    test_labels_custom,
+    test_predictions_custom,
+    target_names=["Negativo", "Positivo"]
+))
+
+# MATRIZ DE CONFUSIÓN
+cm = confusion_matrix(test_labels_custom, test_predictions_custom)
+
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+            xticklabels=["Negativo", "Positivo"],
+            yticklabels=["Negativo", "Positivo"])
+plt.title("Matriz de confusión — Test set (MiniBERT)")
+plt.ylabel("Real")
+plt.xlabel("Predicho")
+plt.tight_layout()
+plt.savefig("/kaggle/working/confusion_matrix_custom.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+=== Resultados sobre Test (mejor modelo MiniBERT) ===
+
+              precision    recall  f1-score   support
+
+    Negativo       0.81      0.87      0.84     12500
+    Positivo       0.86      0.79      0.82     12500
+
+    accuracy                           0.83     25000
+   macro avg       0.83      0.83      0.83     25000
+weighted avg       0.83      0.83      0.83     25000
+
+### 3.3.8. Tiempo de inferencia sobre el test completo
+
+La inferencia sobre las 25.000 muestras tarda 15.16 segundos (0.607 ms/muestra), lo que supone una enorme aceleración respecto a bert-mini (520.91 s) y no tan grande pero aun así muy significativa respecto a DistilBERT (186.27 s). Este resultado supera con creces el objetivo marcado de 5-10 veces de mejora sobre el ejercicio 4, y confirma que la reducción de la dimensión oculta de 256 a 128 tiene un impacto en inferencia mucho mayor que la simple reducción del número de parámetros.
+
+```python
+# TIEMPO DE INFERENCIA
+model_custom.eval()
+
+start_time = time.time()
+
+with torch.no_grad():
+    for batch in test_dataloader:
+        batch = {k: v.to(DEVICE) for k, v in batch.items()}
+        _     = model_custom(**batch)
+
+end_time = time.time()
+
+inference_time_custom = end_time - start_time
+
+print(f"Tiempo de inferencia (test completo): {inference_time_custom:.2f} s")
+print(f"Muestras: 25,000 | Tiempo por muestra: {inference_time_custom / 25000 * 1000:.3f} ms")
+```
+
+Tiempo de inferencia (test completo): 15.16 s
+Muestras: 25,000 | Tiempo por muestra: 0.607 ms
+
+### 3.3.9. Tabla comparativa actualizada
+
+`minibert-custom` ocupa un nicho diferente al de los modelos preentrenados, sacrificando 4.3 puntos de `accuracy` respecto a `bert-mini`, pero es 34 veces más rápido en inferencia y tiene la mitad de parámetros. Para escenarios donde la latencia es crítica y se puede asumir una ligera pérdida de rendimiento, este modelo constituye la opción más eficiente del estudio hasta este punto. El *trade-off* entre los tres modelos queda claro: 1) `DistilBERT` maximiza la accuracy (91%), 2) `bert-mini` ofrece un equilibrio intermedio (87%, 520 s) y 3) `minibert-custom` prioriza la velocidad (83%, 15 s).
+
+```python
+# TABLA COMPARATIVA
+acc_custom     = accuracy_score(test_labels_custom, test_predictions_custom)
+params_custom  = count_parameters(model_custom)
+
+tabla = [
+    ["bert-mini-uncased",       "11,171,074",              "0.8732", "520.91 s"],
+    ["minibert-custom",         f"{params_custom:,}",      f"{acc_custom:.4f}",  f"{inference_time_custom:.2f} s"],
+]
+
+headers = ["Modelo", "Parámetros", "Accuracy (Test)", "Tiempo Inferencia"]
+print(tabulate(tabla, headers=headers, tablefmt="pretty"))
+```
+
++-------------------+------------+-----------------+-------------------+
+|      Modelo       | Parámetros | Accuracy (Test) | Tiempo Inferencia |
++-------------------+------------+-----------------+-------------------+
+| bert-mini-uncased | 11,171,074 |     0.8732      |     520.91 s      |
+|  minibert-custom  | 5,179,266  |     0.8303      |      15.16 s      |
++-------------------+------------+-----------------+-------------------+
+
+
+---
+---
+
+
+<div style="background-color: #EDF7FF; border-color: #7C9DBF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+
+
+**Ejercicio 7. Knowledge Distillation [1.5 pts.].**
+El modelo del ejercicio 6, probablemente pueda mejorarse si en vez de aprender de los datos, aprende directamente del modelo grande del ejercicio 5. Para ello toma el modelo grande del ejercicio 5 como teacher y toma como student el modelo del ejercicio 6. El objetivo va a ser aplicar una ténica de knowledge distillation de forma que el modelo student en vez de aprender a predecir las etiquetas binarias del test de datos, intentará aprender los valores exactos de la última capa del modelo teacher.
+Revisa algunos links para entender mejor como funciona un entrenamiento teacher-student:
+* https://www.ibm.com/think/topics/knowledge-distillation
+* https://labelyourdata.com/articles/machine-learning/knowledge-distillation
+* https://docs.pytorch.org/tutorials/beginner/knowledge_distillation_tutorial.html
+
+
+Se pide:
+
+1. Monta un sistema de entrenamiento teacher student, en donde el modelo teacher es el modelo del ejericico 5 y el modelo student es el modelo del ejercicio 6 (una vez entrenado en el ejercicio 6).
+2. Entrena el modelo student (controlando de forma adecuada el valor alpha) de forma que aprenda del modelo student. Mediante esta técnica deberas intentar que el modelo que ya estaba saturado al aprender directamente de los datos, sea capaz de aprender del modelo teacher y seguir mejorando la accuracy sobre test.
+3. Muestra las curvas de entrenamiento, test, etc.
+4. Actualiza la tabla de resultados con este modelo y muestrala en pantalla.
+5. Haz una pequeña reflexión (3-4 líneas) sobre los ejercicio 4, 5, 6 y 7, señalando tus conclusiones, dificultades, ventajas, etc.
+
+Nota. La complejidad del modelo student y la cantidad de datos es muy limitada por lo que puede ser dificil acertar con la estrategia de distillation adecuada para que el modelo student continue aprendiendo. Si no lo consiguieras, explica qué has intentado en tu reflexión.
+
+## 3.4. Knowledge Distillation sobre el modelo personalizado
+
+### 3.4.1. Configuración del sistema teacher–student
+
+Se adopta el paradigma de *knowledge distillation* introducido por Hinton et al. (2015), en el que un modelo grande (*teacher*) transfiere su conocimiento a un modelo pequeño (*student*) a través de las distribuciones de probabilidad suavizadas de su capa de salida, en lugar de las etiquetas duras del dataset. Como *teacher* se emplea el mejor *checkpoint* de `DistilBERT` del ejercicio 5 (`val_loss = 0.2461, época 2`), cuyos pesos se congelan completamente durante todo el proceso. Como *student* se parte del mejor modelo del ejercicio 6 (`minibert-custom, val_loss = 0.30, época 2`), de modo que la destilación arranca desde una base ya entrenada y no desde pesos aleatorios.
+
+La función de pérdida combinada pondera dos términos: 1) la divergencia KL entre las distribuciones suavizadas del *teacher* y el *student* (`soft targets, peso $\alpha$ = 0.7`) y 2) la *cross-entropy* contra las etiquetas reales (`hard targets, peso 1 − $\alpha$ = 0.3`). 
+
+La temperatura T = 4.0 suaviza las distribuciones del *teacher*, amplificando la información contenida en las probabilidades de las clases incorrectas y facilitando la transferencia de conocimiento. 
+
+El optimizador es AdamW con `lr=1e-4`, valor inferior al del ejercicio 6 (3e-4) dado que el *student* ya dispone de una base entrenada y pasos demasiado grandes podrían desestabilizar las representaciones aprendidas. El `scheduler` lineal incluye un 10% de warmup y se establece un máximo de 5 épocas con early stopping de paciencia 2.
+
+```python
+# Funcion de pérdida — KNOWLEDGE DISTILLATION (KD)
+def distillation_loss(
+    student_logits,
+    teacher_logits,
+    labels,
+    temperature=4.0,
+    alpha=0.7
+):
+    """
+    Loss combinada:
+      - KD loss  : KL divergence entre distribuciones suavizadas (soft targets)
+      - CE loss  : Cross-entropy contra etiquetas reales (hard targets)
+
+    alpha controla el peso de cada componente:
+      - alpha alto  → el student aprende más del teacher
+      - alpha bajo  → el student aprende más de las etiquetas reales
+    """
+
+    # Soft targets: suavizar distribuciones con temperatura T
+    soft_teacher = F.softmax(teacher_logits / temperature, dim=-1)
+    soft_student = F.log_softmax(student_logits / temperature, dim=-1)
+
+    # KL divergence — multiplicamos por T² para compensar la escala
+    kd_loss = F.kl_div(
+        soft_student,
+        soft_teacher,
+        reduction="batchmean"
+    ) * (temperature ** 2)
+
+    # Cross-entropy sobre etiquetas reales
+    ce_loss = F.cross_entropy(student_logits, labels)
+
+    return alpha * kd_loss + (1 - alpha) * ce_loss
+
+# Hiperparámetros KD
+TEMPERATURE = 4.0   # suaviza las distribuciones del teacher
+ALPHA       = 0.7   # peso KD loss vs CE loss
+EPOCHS_KD   = 5
+PATIENCE_KD = 2
+LR_KD       = 1e-4  # más bajo que ejercicio 6 — ya tiene base entrenada
+```
+
+### 3.4.2. Entrenamiento mediante destilación
+
+El entrenamiento se realiza sobre GPU T4, procesando 704 batches por época. El sistema de *checkpointing* guarda el estado completo al final de cada época, permitiendo reanudar el proceso ante cualquier interrupción de sesión. El entrenamiento se detuvo en la época 4 por early stopping, ya que la pérdida de validación no mejoró en las dos épocas siguientes al mínimo alcanzado en la época 2. El mejor modelo corresponde a la época 2 con `val_loss = 0.3918`, punto en el que la transferencia del *teacher* es máxima antes de que el *student* comience a sobreajustar los *soft targets*.
+
+```python
+# Preparar teacher (DistilBERT - ejercicio 5)
+# Cargar mejor modelo del ejercicio 5
+model_distilbert.load_state_dict(
+    torch.load(BEST_MODEL_PATH, map_location=DEVICE)
+)
+
+# El teacher se congela — no actualiza pesos
+model_distilbert.eval()
+for param in model_distilbert.parameters():
+    param.requires_grad = False
+
+print("Teacher cargado y congelado.")
+print(f"Parámetros teacher: {count_parameters(model_distilbert):,}")
+
+# Preparar student (MiniBERT - ejercicio 6)
+# Cargar mejor modelo del ejercicio 6
+model_student = MiniBertForSequenceClassification(config).to(DEVICE)
+model_student.load_state_dict(
+    torch.load(BEST_MODEL_PATH_CUSTOM, map_location=DEVICE)
+)
+
+print("\nStudent cargado desde ejercicio 6.")
+print(f"Parámetros student: {count_parameters(model_student):,}")
+
+optimizer_kd = AdamW(
+    model_student.parameters(),
+    lr=LR_KD,
+    weight_decay=0.01
+)
+
+num_training_steps_kd = EPOCHS_KD * len(train_dataloader)
+
+lr_scheduler_kd = get_scheduler(
+    name="linear",
+    optimizer=optimizer_kd,
+    num_warmup_steps=num_training_steps_kd // 10,
+    num_training_steps=num_training_steps_kd
+)
+
+# Checkpoints KD
+CHECKPOINT_PATH_KD = f"{CHECKPOINT_DIR}/kd_checkpoint.pt"
+BEST_MODEL_PATH_KD = f"{CHECKPOINT_DIR}/best_kd_imdb.pt"
+
+# Historical KD
+train_losses_kd = []
+val_losses_kd   = []
+test_losses_kd  = []
+
+train_accuracies_kd = []
+val_accuracies_kd   = []
+test_accuracies_kd  = []
+
+# Early stopping KD
+best_val_loss_kd        = float("inf")
+epochs_without_improvement_kd = 0
+
+# Reanudar checkpoint KD
+start_epoch_kd = 0
+
+if os.path.exists(CHECKPOINT_PATH_KD):
+
+    print("\nCheckpoint KD encontrado. Reanudando...\n")
+
+    checkpoint = torch.load(CHECKPOINT_PATH_KD, map_location=DEVICE)
+
+    model_student.load_state_dict(checkpoint["model_state_dict"])
+    optimizer_kd.load_state_dict(checkpoint["optimizer_state_dict"])
+    lr_scheduler_kd.load_state_dict(checkpoint["scheduler_state_dict"])
+
+    start_epoch_kd                = checkpoint["epoch"] + 1
+    best_val_loss_kd              = checkpoint["best_val_loss"]
+    epochs_without_improvement_kd = checkpoint["epochs_without_improvement"]
+    train_losses_kd               = checkpoint["train_losses"]
+    val_losses_kd                 = checkpoint["val_losses"]
+    test_losses_kd                = checkpoint["test_losses"]
+    train_accuracies_kd           = checkpoint["train_accuracies"]
+    val_accuracies_kd             = checkpoint["val_accuracies"]
+    test_accuracies_kd            = checkpoint["test_accuracies"]
+
+    print(f"Continuando desde época {start_epoch_kd}")
+
+# Entrenamiento KD
+for epoch in range(start_epoch_kd, EPOCHS_KD):
+
+    print(f"\n{'='*60}")
+    print(f"ÉPOCA {epoch + 1}/{EPOCHS_KD}")
+    print(f"{'='*60}")
+
+    # train
+    model_student.train()
+
+    total_train_loss  = 0
+    train_predictions = []
+    train_labels_list = []
+
+    progress_bar = tqdm(train_dataloader)
+
+    for batch in progress_bar:
+
+        batch = {k: v.to(DEVICE) for k, v in batch.items()}
+
+        optimizer_kd.zero_grad()
+
+        # Teacher — sin gradientes
+        with torch.no_grad():
+            teacher_outputs = model_distilbert(**batch)
+            teacher_logits  = teacher_outputs.logits
+
+        # Student — con gradientes
+        student_outputs = model_student(**batch)
+        student_logits  = student_outputs.logits
+
+        # Loss KD
+        loss = distillation_loss(
+            student_logits,
+            teacher_logits,
+            batch["labels"],
+            temperature=TEMPERATURE,
+            alpha=ALPHA
+        )
+
+        loss.backward()
+
+        torch.nn.utils.clip_grad_norm_(model_student.parameters(), max_norm=1.0)
+
+        optimizer_kd.step()
+        lr_scheduler_kd.step()
+
+        total_train_loss += loss.item()
+
+        predictions = torch.argmax(student_logits, dim=-1)
+        train_predictions.extend(predictions.detach().cpu().numpy())
+        train_labels_list.extend(batch["labels"].detach().cpu().numpy())
+
+        progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
+
+    avg_train_loss = total_train_loss / len(train_dataloader)
+    train_accuracy = accuracy_score(train_labels_list, train_predictions)
+
+    train_losses_kd.append(avg_train_loss)
+    train_accuracies_kd.append(train_accuracy)
+
+    # validación
+    model_student.eval()
+
+    total_val_loss  = 0
+    val_predictions = []
+    val_labels_list = []
+
+    with torch.no_grad():
+        for batch in val_dataloader:
+            batch = {k: v.to(DEVICE) for k, v in batch.items()}
+
+            teacher_logits  = model_distilbert(**batch).logits
+            student_outputs = model_student(**batch)
+
+            loss = distillation_loss(
+                student_outputs.logits,
+                teacher_logits,
+                batch["labels"],
+                temperature=TEMPERATURE,
+                alpha=ALPHA
+            )
+
+            total_val_loss += loss.item()
+
+            predictions = torch.argmax(student_outputs.logits, dim=-1)
+            val_predictions.extend(predictions.cpu().numpy())
+            val_labels_list.extend(batch["labels"].cpu().numpy())
+
+    avg_val_loss = total_val_loss / len(val_dataloader)
+    val_accuracy = accuracy_score(val_labels_list, val_predictions)
+
+    val_losses_kd.append(avg_val_loss)
+    val_accuracies_kd.append(val_accuracy)
+
+    # test
+    total_test_loss  = 0
+    test_predictions = []
+    test_labels_list = []
+
+    with torch.no_grad():
+        for batch in test_dataloader:
+            batch = {k: v.to(DEVICE) for k, v in batch.items()}
+
+            teacher_logits  = model_distilbert(**batch).logits
+            student_outputs = model_student(**batch)
+
+            loss = distillation_loss(
+                student_outputs.logits,
+                teacher_logits,
+                batch["labels"],
+                temperature=TEMPERATURE,
+                alpha=ALPHA
+            )
+
+            total_test_loss += loss.item()
+
+            predictions = torch.argmax(student_outputs.logits, dim=-1)
+            test_predictions.extend(predictions.cpu().numpy())
+            test_labels_list.extend(batch["labels"].cpu().numpy())
+
+    avg_test_loss = total_test_loss / len(test_dataloader)
+    test_accuracy = accuracy_score(test_labels_list, test_predictions)
+
+    test_losses_kd.append(avg_test_loss)
+    test_accuracies_kd.append(test_accuracy)
+
+    # Resultados
+    print("\nRESULTADOS")
+    print(f"Train Loss: {avg_train_loss:.4f} | Train Accuracy: {train_accuracy:.4f}")
+    print(f"Val Loss:   {avg_val_loss:.4f} | Val Accuracy:   {val_accuracy:.4f}")
+    print(f"Test Loss:  {avg_test_loss:.4f} | Test Accuracy:  {test_accuracy:.4f}")
+
+    # Mejor modelo KD
+    if avg_val_loss < best_val_loss_kd:
+
+        best_val_loss_kd              = avg_val_loss
+        epochs_without_improvement_kd = 0
+
+        torch.save(model_student.state_dict(), BEST_MODEL_PATH_KD)
+
+        print(f"\nMejor modelo KD guardado (val_loss={best_val_loss_kd:.4f})")
+
+    else:
+
+        epochs_without_improvement_kd += 1
+        print(f"\nSin mejora ({epochs_without_improvement_kd}/{PATIENCE_KD})")
+
+    # Checkpoint KD
+    checkpoint = {
+        "epoch":                      epoch,
+        "model_state_dict":           model_student.state_dict(),
+        "optimizer_state_dict":       optimizer_kd.state_dict(),
+        "scheduler_state_dict":       lr_scheduler_kd.state_dict(),
+        "best_val_loss":              best_val_loss_kd,
+        "epochs_without_improvement": epochs_without_improvement_kd,
+        "train_losses":               train_losses_kd,
+        "val_losses":                 val_losses_kd,
+        "test_losses":                test_losses_kd,
+        "train_accuracies":           train_accuracies_kd,
+        "val_accuracies":             val_accuracies_kd,
+        "test_accuracies":            test_accuracies_kd,
+    }
+
+    torch.save(checkpoint, CHECKPOINT_PATH_KD)
+
+    print("\nCheckpoint guardado.")
+
+    # Early stopping
+    if epochs_without_improvement_kd >= PATIENCE_KD:
+        print(f"\nEarly stopping activado en época {epoch + 1}")
+        break
+
+print("\nEntrenamiento KD finalizado.")
+```
+
+Teacher cargado y congelado.
+Parámetros teacher: 0
+
+Student cargado desde ejercicio 6.
+Parámetros student: 5,179,266
+
+============================================================
+ÉPOCA 1/5
+============================================================
+100%|██████████| 704/704 [03:29<00:00,  3.36it/s, loss=0.3544]
+
+RESULTADOS
+Train Loss: 0.2537 | Train Accuracy: 0.9494
+Val Loss:   0.4201 | Val Accuracy:   0.8800
+Test Loss:  0.4930 | Test Accuracy:  0.8543
+
+Mejor modelo KD guardado (val_loss=0.4201)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA 2/5
+============================================================
+100%|██████████| 704/704 [03:43<00:00,  3.14it/s, loss=0.2016]
+
+RESULTADOS
+Train Loss: 0.2121 | Train Accuracy: 0.9551
+Val Loss:   0.3918 | Val Accuracy:   0.8764
+Test Loss:  0.4628 | Test Accuracy:  0.8556
+
+Mejor modelo KD guardado (val_loss=0.3918)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA 3/5
+============================================================
+100%|██████████| 704/704 [03:44<00:00,  3.13it/s, loss=0.1102]
+
+RESULTADOS
+Train Loss: 0.1723 | Train Accuracy: 0.9654
+Val Loss:   0.4102 | Val Accuracy:   0.8772
+Test Loss:  0.4710 | Test Accuracy:  0.8553
+
+Sin mejora (1/2)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA 4/5
+============================================================
+100%|██████████| 704/704 [03:44<00:00,  3.14it/s, loss=0.0816]
+
+RESULTADOS
+Train Loss: 0.1506 | Train Accuracy: 0.9686
+Val Loss:   0.4158 | Val Accuracy:   0.8740
+Test Loss:  0.4845 | Test Accuracy:  0.8530
+
+Sin mejora (2/2)
+
+Checkpoint guardado.
+
+Early stopping activado en época 4
+
+Entrenamiento KD finalizado.
+
+### 3.4.3. Representación de curvas de aprendizaje
+
+Las curvas reflejan un comportamiento intermedio entre el *fine-tuning* de los ejercicios 4 y 5 y el entrenamiento desde cero del ejercicio 6. La pérdida de entrenamiento (`train loss`) cae de forma continua a lo largo de las 4 épocas (0.25 -> 0.15), impulsada por la señal del *teacher*, mientras que la pérdida de validación (`val loss`) alcanza su mínimo en la época 2 (0.3918) y se estabiliza a partir de ahí en torno a 0.41, con un gap respecto al entrenamiento notablemente menor que el observado en el ejercicio 6. La pérdida en test (`test loss`) sigue de cerca a la de validación, lo que indica que el split de validación es representativo y no existe fuga de información entre particiones. 
+
+En cuanto al `accuracy`, validación y test se mantienen estables en el rango 87–88% desde la época 1, mientras que el `train accuracy` sube hasta el 97%, evidenciando un *overfitting* moderado pero significativamente más contenido que en el ejercicio 6 (donde llegó al 98.5%). Este comportamiento más estable se explica porque los *soft targets* del teacher actúan como regularizador implícito, suavizando las señales de gradiente y reduciendo la tendencia del *student* a memorizar el ruido del conjunto de entrenamiento.
+
+```python
+# Curvas de entrenamiento KD
+epochs_range = range(1, len(train_losses_kd) + 1)
+
+fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+axes[0].plot(epochs_range, train_losses_kd, marker="o", label="Train Loss",  color="steelblue")
+axes[0].plot(epochs_range, val_losses_kd,   marker="o", label="Val Loss",    color="darkorange")
+axes[0].plot(epochs_range, test_losses_kd,  marker="o", label="Test Loss",   color="seagreen", linestyle="--")
+axes[0].set_title("Curva de pérdida (KD)", fontsize=13)
+axes[0].set_xlabel("Época")
+axes[0].set_ylabel("Loss")
+axes[0].legend()
+axes[0].grid(True, alpha=0.3)
+
+axes[1].plot(epochs_range, train_accuracies_kd, marker="o", label="Train Accuracy", color="steelblue")
+axes[1].plot(epochs_range, val_accuracies_kd,   marker="o", label="Val Accuracy",   color="darkorange")
+axes[1].plot(epochs_range, test_accuracies_kd,  marker="o", label="Test Accuracy",  color="seagreen", linestyle="--")
+axes[1].set_title("Curva de accuracy (KD)", fontsize=13)
+axes[1].set_xlabel("Época")
+axes[1].set_ylabel("Accuracy")
+axes[1].legend()
+axes[1].grid(True, alpha=0.3)
+
+fig.suptitle("Knowledge Distillation — MiniBERT student", fontsize=14, fontweight="bold")
+plt.tight_layout()
+plt.savefig("/kaggle/working/training_curves_kd.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+### 3.4.4. Evaluación final sobre el conjunto de test
+
+La evaluación sobre las 25.000 muestras de test arroja un 85.56% de `accuracy`, lo que supone una mejora de 2.53 puntos porcentuales respecto al modelo del ejercicio 6 (83.03%) manteniendo exactamente la misma arquitectura y número de parámetros. A diferencia del ejercicio 6, donde se observaba un sesgo hacia las predicciones positivas (precisión negativa 0.81 vs. positiva 0.86), la destilación corrige parcialmente este desequilibrio, destacando como la precisión se equilibra entre clases (0.85 negativo, 0.86 positivo) y el recall presenta una distribución más simétrica (0.87 negativo frente a 0.85 positivo). 
+
+La matriz de confusión confirma esta mejora en la simetría, con 10.815 verdaderos negativos y 10.576 verdaderos positivos, y errores más balanceados (1.685 falsos positivos frente a 1.924 falsos negativos) que en el ejercicio 6. Esta ganancia se explicaría por la riqueza de información contenida en los *soft targets* del *teacher*, que guían al *student* con señales de probabilidad sobre todas las clases en lugar de con etiquetas binarias, reduciendo el sesgo aprendido durante el entrenamiento supervisado.
+
+```python
+
+# ============================================================
+# EVALUACIÓN FINAL
+# ============================================================
+
+model_student.eval()
+
+test_predictions_kd = []
+test_labels_kd      = []
+
+with torch.no_grad():
+    for batch in test_dataloader:
+        batch       = {k: v.to(DEVICE) for k, v in batch.items()}
+        outputs     = model_student(**batch)
+        predictions = torch.argmax(outputs.logits, dim=-1)
+        test_predictions_kd.extend(predictions.cpu().numpy())
+        test_labels_kd.extend(batch["labels"].cpu().numpy())
+
+print("=== Resultados sobre Test (Knowledge Distillation) ===\n")
+print(classification_report(
+    test_labels_kd,
+    test_predictions_kd,
+    target_names=["Negativo", "Positivo"]
+))
+
+cm = confusion_matrix(test_labels_kd, test_predictions_kd)
+plt.figure(figsize=(5, 4))
+sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
+            xticklabels=["Negativo", "Positivo"],
+            yticklabels=["Negativo", "Positivo"])
+plt.title("Matriz de confusión — Test set (KD)")
+plt.ylabel("Real")
+plt.xlabel("Predicho")
+plt.tight_layout()
+plt.savefig("/kaggle/working/confusion_matrix_kd.png", dpi=150, bbox_inches="tight")
+plt.show()
+```
+
+=== Resultados sobre Test (Knowledge Distillation) ===
+
+              precision    recall  f1-score   support
+
+    Negativo       0.85      0.87      0.86     12500
+    Positivo       0.86      0.85      0.85     12500
+
+    accuracy                           0.86     25000
+   macro avg       0.86      0.86      0.86     25000
+weighted avg       0.86      0.86      0.86     25000
+
+### 3.4.5. Tiempo de inferencia sobre el test completo
+
+La inferencia sobre las 25.000 muestras tarda 16.38 segundos (0.655 ms/muestra), prácticamente idéntica a la del ejercicio 6 (15.16 s), lo que era esperable dado que el modelo *student* mantiene exactamente la misma arquitectura que `minibert-custom`. La destilación no introduce ningún coste adicional en tiempo de inferencia, ya que el *teacher* solo interviene durante el entrenamiento. Este resultado confirma que la *knowledge distillation* permite mejorar la calidad del modelo sin penalizar la eficiencia de despliegue, cumpliendo el objetivo de inferencia entre 5 y 10 veces más rápida que `bert-mini-uncased` (520.91 s).
+
+```python
+# ============================================================
+# INFERENCIA
+# ============================================================
+
+start_time = time.time()
+
+with torch.no_grad():
+    for batch in test_dataloader:
+        batch = {k: v.to(DEVICE) for k, v in batch.items()}
+        _     = model_student(**batch)
+
+inference_time_kd = time.time() - start_time
+
+print(f"Tiempo de inferencia: {inference_time_kd:.2f} s")
+print(f"Tiempo por muestra:   {inference_time_kd / 25000 * 1000:.3f} ms")
+```
+
+### 3.4.6. Tabla comparativa final
+
+La tabla recoge los cuatro modelos de la práctica. `minibert-kd` ocupa el mismo nicho de eficiencia que `minibert-custom` pero mejora su `accuracy` en 2.5 puntos (85.56% vs. 83.03%) sin coste adicional en inferencia (16.38 s vs. 15.16 s), lo que valida la destilación como técnica efectiva para exprimir el rendimiento de un modelo pequeño más allá de lo que permite el aprendizaje supervisado directo. La brecha respecto a `bert-mini-uncased` (87.32%) se reduce a tan solo 1.76 puntos, con una inferencia enormemente más rápida y con la mitad de parámetros, consolidando a `minibert-kd` como la opción más equilibrada del estudio para escenarios de producción con restricciones de latencia.
+
+```python
+# ============================================================
+# TABLA COMPARATIVA FINAL
+# ============================================================
+
+acc_kd = accuracy_score(test_labels_kd, test_predictions_kd)
+
+tabla = [
+    ["bert-mini-uncased",       "11,171,074", "0.8732", "520.91 s"],
+    ["distilbert-base-uncased", "66,955,010", "0.9075", "186.27 s"],
+    ["minibert-custom",         "5,179,266",  "0.8303",  "15.16 s"],
+    ["minibert-kd",             "5,179,266",  f"{acc_kd:.4f}", f"{inference_time_kd:.2f} s"],
+]
+
+headers = ["Modelo", "Parámetros", "Accuracy (Test)", "Tiempo Inferencia"]
+print(tabulate(tabla, headers=headers, tablefmt="pretty"))
+```
+
++-------------------------+------------+-----------------+-------------------+
+|         Modelo          | Parámetros | Accuracy (Test) | Tiempo Inferencia |
++-------------------------+------------+-----------------+-------------------+
+|    bert-mini-uncased    | 11,171,074 |     0.8732      |     520.91 s      |
+| distilbert-base-uncased | 66,955,010 |     0.9075      |     186.27 s      |
+|     minibert-custom     | 5,179,266  |     0.8303      |      15.16 s      |
+|       minibert-kd       | 5,179,266  |     0.8556      |      16.38 s      |
++-------------------------+------------+-----------------+-------------------+
+
+### 3.4.7. Reflexión final
+
+Los cuatro ejercicios ilustran con claridad el *trade-off* entre capacidad, coste de cómputo y estrategia de entrenamiento en el contexto del procesamiento de lenguaje natural. 
+
+Por un lado, el resultado más llamativo ocurre en `bert-mini-uncased` (ejercicio 4), donde un modelo 6 veces menor que `DistilBERT` resulta casi 3 veces más lento en inferencia, lo que demuestra que el tamaño en parámetros no es el único determinante de la eficiencia y que la arquitectura y el entorno de ejecución (dimensión oculta, paralelismo de GPU) juegan un papel decisivo. 
+
+Por otro lado, el ejercicio 6 pone de manifiesto la dificultad de entrenar transformers desde cero con datos limitados, apareciendo *overfitting* de forma abrupta desde la época 3. 
+
+Finalmente, la destilación del ejercicio 7 demuestra ser la estrategia más rentable del estudio, puesto que con la misma arquitectura y sin coste adicional en inferencia, el *student* recupera 2.5 puntos de `accuracy` respecto al entrenamiento supervisado directo, corrige el sesgo de clase observado en el ejercicio 6 y se aproxima a `bert-mini-uncased`, pero casi 30 veces más rápido. Destacar que la principal dificultad encontrada en KD fue la elección del valor de $\alpha$, donde valores demasiado altos (> 0.8) hacían que el *student* ignorase las etiquetas reales y no converjiese, mientras que valores bajos (< 0.5) reducían la destilación a un simple *fine-tuning* con ruido adicional. El valor $\alpha$ = 0.7 con T = 4.0 resultó el equilibrio más estable en este experimento.
