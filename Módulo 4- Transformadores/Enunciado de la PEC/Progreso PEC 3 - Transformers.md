@@ -1672,9 +1672,18 @@ Parámetros entrenables: 11171074
 Cada reseña se transforma en tokens numéricos mediante el tokenizador de `bert-mini-uncased`, que aplica WordPiece sobre un vocabulario de 30.522 tokens. La tokenización se aplica en modo batch con truncación a `MAX_LENGTH=256` tokens, longitud suficiente para capturar el contenido semántico principal de la mayoría de reseñas sin el coste cuadrático asociado a secuencias más largas en la atención. 
 
 ```python
-# Tokenización del dataset
+# Hiperparámetros
 MAX_LENGTH = 256
+BATCH_SIZE = 32
+LEARNING_RATE = 2e-5
+WEIGHT_DECAY = 0.01
+EPOCHS = 5
+PATIENCE = 2
+SEED = 42
+```
+La tokenización se realizó mediante el tokenizador WordPiece asociado al modelo, aplicando truncación a MAX_LENGTH=256 y padding dinámico mediante DataCollatorWithPadding. El conjunto de entrenamiento se dividió en 22.500 muestras para train y 2.500 para validación, manteniendo las 25.000 muestras originales para test.
 
+```python
 # Función de tokenización para mapear sobre el dataset
 def tokenize_function(batch):
     '''
@@ -1739,13 +1748,6 @@ test_dataloader  = DataLoader(tokenized_dataset["test"], batch_size=BATCH_SIZE, 
 Se utiliza AdamW como optimizador con `lr=2e-5`, configuración estándar recomendada por Devlin et al. (2019) para *fine-tuning* de modelos BERT. El *learning rate* sigue un `scheduler` lineal decreciente desde 2e-5 hasta 0 a lo largo de todos los pasos de entrenamiento, favoreciendo la estabilidad de convergencia. Se establece un máximo de 5 épocas con *early stopping* de paciencia 2, de forma que el entrenamiento se detiene si la val loss no mejora en dos épocas consecutivas.
 
 ```python
-# Hiperparámetros
-EPOCHS        = 5
-LEARNING_RATE = 2e-5
-PATIENCE      = 2
-```
-
-```python
 # Optimizador
 optimizer = AdamW(model.parameters(), lr=LEARNING_RATE)
 
@@ -1766,6 +1768,18 @@ lr_scheduler = get_scheduler(
 El entrenamiento se realiza procesando 352 batches por época. El mejor modelo se persiste en disco cada vez que la pérdida de validación (val loss) mejora, de forma que al final del proceso se recupera el *checkpoint* óptimo con independencia de cuándo se produzca el *early stopping*.
 
 El entrenamiento completó las 5 épocas antes de activar el *early stopping*, ya que aunque la pérdida de validación se estancó en la época 3 (0.3025), en la época 5 repitió exactamente ese valor y el contador no llegó a 2. El mejor modelo corresponde a la época 3 con `val_loss=0.3025`, punto en el que la generalización es máxima antes de que el modelo comience a memorizar el ruido del conjunto de entrenamiento.
+
+```python
+if os.path.exists(CHECKPOINT_PATH):
+    os.remove(CHECKPOINT_PATH)
+    print("Checkpoint eliminado. Entrenamiento desde cero.")
+
+# Directorios
+CHECKPOINT_DIR = "/kaggle/working/checkpoints"
+os.makedirs(CHECKPOINT_DIR, exist_ok=True)
+CHECKPOINT_PATH = f"{CHECKPOINT_DIR}/bert-mini_checkpoint.pt"
+BEST_MODEL_PATH = f"{CHECKPOINT_DIR}/best_bert-mini_imdb.pt"`
+``
 
 ```python
 # Historial de métricas
@@ -1892,46 +1906,81 @@ for epoch in range(EPOCHS):
 ```
 
 
+============================================================
 ÉPOCA 1/5
-100%|██████████| 352/352 [37:30<00:00,  6.39s/it, loss=0.429]
-Train Loss: 0.4776 | Train Accuracy: 0.7752
-Val Loss:   0.3424 | Val Accuracy:   0.8536
-Test Loss:  0.3517 | Test Accuracy:  0.8472
-  Mejor modelo guardado (val_loss=0.3424)
+============================================================
+100%|██████████| 704/704 [01:03<00:00, 11.03it/s, loss=0.2432]
 
+RESULTADOS
+Train Loss: 0.4197 | Train Accuracy: 0.8105
+Val Loss:   0.3246 | Val Accuracy:   0.8572
+Test Loss:  0.3292 | Test Accuracy:  0.8591
+
+Mejor modelo guardado (val_loss=0.3246)
+
+Checkpoint guardado.
+
+============================================================
 ÉPOCA 2/5
-100%|██████████| 352/352 [35:47<00:00,  6.10s/it, loss=0.427]
-Train Loss: 0.3300 | Train Accuracy: 0.8614
-Val Loss:   0.3134 | Val Accuracy:   0.8660
-Test Loss:  0.3190 | Test Accuracy:  0.8645
-  Mejor modelo guardado (val_loss=0.3134)
+============================================================
+100%|██████████| 704/704 [01:01<00:00, 11.41it/s, loss=0.0914]
 
+RESULTADOS
+Train Loss: 0.3063 | Train Accuracy: 0.8708
+Val Loss:   0.3061 | Val Accuracy:   0.8692
+Test Loss:  0.3071 | Test Accuracy:  0.8713
+
+Mejor modelo guardado (val_loss=0.3061)
+
+Checkpoint guardado.
+
+============================================================
 ÉPOCA 3/5
-100%|██████████| 352/352 [39:38<00:00,  6.76s/it, loss=0.244]
-Train Loss: 0.2906 | Train Accuracy: 0.8830
-Val Loss:   0.3025 | Val Accuracy:   0.8744
-Test Loss:  0.3081 | Test Accuracy:  0.8705
-  Mejor modelo guardado (val_loss=0.3025)
+============================================================
+100%|██████████| 704/704 [01:00<00:00, 11.55it/s, loss=0.1526]
 
+RESULTADOS
+Train Loss: 0.2643 | Train Accuracy: 0.8916
+Val Loss:   0.2910 | Val Accuracy:   0.8784
+Test Loss:  0.2976 | Test Accuracy:  0.8775
+
+Mejor modelo guardado (val_loss=0.2910)
+
+Checkpoint guardado.
+
+============================================================
 ÉPOCA 4/5
-100%|██████████| 352/352 [37:27<00:00,  6.38s/it, loss=0.195] 
-Train Loss: 0.2684 | Train Accuracy: 0.8918
-Val Loss:   0.3051 | Val Accuracy:   0.8764
-Test Loss:  0.3084 | Test Accuracy:  0.8722
-  Sin mejora (1/2)
+============================================================
+100%|██████████| 704/704 [01:00<00:00, 11.58it/s, loss=0.8314]
 
+RESULTADOS
+Train Loss: 0.2405 | Train Accuracy: 0.9045
+Val Loss:   0.2991 | Val Accuracy:   0.8764
+Test Loss:  0.2962 | Test Accuracy:  0.8792
+
+Sin mejora (1/2)
+
+Checkpoint guardado.
+
+============================================================
 ÉPOCA 5/5
-100%|██████████| 352/352 [36:21<00:00,  6.20s/it, loss=0.276]
-Train Loss: 0.2563 | Train Accuracy: 0.8982
-Val Loss:   0.3025 | Val Accuracy:   0.8772
-Test Loss:  0.3073 | Test Accuracy:  0.8732
-  Sin mejora (2/2)
+============================================================
+100%|██████████| 704/704 [01:00<00:00, 11.60it/s, loss=0.6912]
+
+RESULTADOS
+Train Loss: 0.2206 | Train Accuracy: 0.9155
+Val Loss:   0.3035 | Val Accuracy:   0.8780
+Test Loss:  0.3001 | Test Accuracy:  0.8807
+
+Sin mejora (2/2)
+
+Checkpoint guardado.
 
 Early stopping activado en época 5.
 
-### 3.1.8. Representación de curvas de aprendizaje
+Entrenamiento finalizado.
 
-Las curvas muestran un comportamiento de *fine-tuning* progresivo y estable. La pérdida de entrenamiento (train loss) cae de forma continua a lo largo de las 5 épocas, mientras que pérdida de validación y test (val loss; test loss) convergen rápidamente en la época 1 y se estabilizan a partir de la época 3 en torno a 0.30, momento marcado por la línea roja. A diferencia de DistilBERT, donde el *overfitting* era visible ya en la época 3, aquí el gap entre pérdida de entrenamiento y validacion se abre de forma más gradual, lo que sugiere que la menor capacidad del modelo actúa como regularizador implícito. En cuanto al `accuracy`, validación y test se estabilizan en torno al 87-88% desde la época 3, mientras que el entrenamiento continúa subiendo hasta el 90%, señal de un *overfitting* moderado pero contenido.
+### 3.1.8. Representación de curvas de aprendizaje
 
 ```python
 epochs_range = range(1, len(train_losses) + 1)
@@ -1969,8 +2018,6 @@ plt.show()
 ![training_curves_bert_mini](../figures/training_curves_bert_mini.png)
 
 ### 3.1.9. Evaluación final sobre el conjunto de test
-
-La evaluación sobre las 25.000 muestras de test arroja un 87.32% de `accuracy` con precisión y `recall` equilibrados entre clases (0.87-0.88), lo que indica ausencia de sesgo hacia ninguna de las dos clases. La matriz de confusión confirma esta simetría, mostrando 11.011 verdaderos negativos y 10.819 verdaderos positivos, con errores también equilibrados (1.489 falsos positivos y 1.681 falsos negativos). Este resultado establece la línea base del estudio, donde un modelo pequeño y preentrenado es capaz de alcanzar un rendimiento razonable en clasificación de sentimiento sin apenas coste de diseño.
 
 ```python
 # Modelo en modo evaluación
@@ -2014,19 +2061,17 @@ plt.show()
 
               precision    recall  f1-score   support
 
-    Negativo       0.87      0.88      0.87     12500
-    Positivo       0.88      0.87      0.87     12500
+    Negativo       0.87      0.90      0.88     12500
+    Positivo       0.89      0.87      0.88     12500
 
-    accuracy                           0.87     25000
-   macro avg       0.87      0.87      0.87     25000
-weighted avg       0.87      0.87      0.87     25000
+    accuracy                           0.88     25000
+   macro avg       0.88      0.88      0.88     25000
+weighted avg       0.88      0.88      0.88     25000
 
 
 ![training_curves_bert_mini](../figures/training_curves_bert_mini.png)
 
 ### 3.1.10. Tiempo de inferencia sobre el test completo
-
-La inferencia sobre las 25.000 muestras tarda 520.91 segundos (20.84 ms/muestra), un tiempo considerablemente alto para un modelo de solo 11M de parámetros. 
 
 ```python
 model.eval()
@@ -2046,12 +2091,10 @@ print(f"Tiempo de inferencia (test completo): {inference_time:.2f} s")
 print(f"Muestras: 25,000 | Tiempo por muestra: {inference_time / 25000 * 1000:.3f} ms")
 ```
 
-Tiempo de inferencia (test completo): 520.91 s
-Muestras: 25,000 | Tiempo por muestra: 20.836 ms
+Tiempo de inferencia (test completo): 21.73 s
+Muestras: 25,000 | Tiempo por muestra: 0.869 ms
 
 ### 3.1.11. Tabla comparativa
-
-Se construye la tabla inicial de comparación que se irá completando a lo largo de los ejercicios siguientes. En este punto recoge únicamente bert-mini como línea base, con sus métricas de accuracy y tiempo de inferencia sobre el conjunto de test completo.
 
 ```python
 num_params     = sum(p.numel() for p in model.parameters())
@@ -2069,7 +2112,7 @@ print(tabulate(tabla, headers=headers, tablefmt="pretty"))
 +-------------------+------------+-----------------+-------------------+
 |      Modelo       | Parámetros | Accuracy (Test) | Tiempo Inferencia |
 +-------------------+------------+-----------------+-------------------+
-| bert-mini-uncased | 11,171,074 |     0.8732      |     520.91 s      |
+| bert-mini-uncased | 11,171,074 |     0.8807      |      21.73 s      |
 +-------------------+------------+-----------------+-------------------+
 
 ---
@@ -2634,66 +2677,52 @@ print("\nEntrenamiento finalizado.")
 ============================================================
 ÉPOCA 1/5
 ============================================================
-100%|██████████| 704/704 [08:34<00:00,  1.37it/s, loss=0.0266]
+100%|██████████| 704/704 [09:20<00:00,  1.26it/s, loss=0.1065]
 
 RESULTADOS
-Train Loss: 0.2961 | Train Accuracy: 0.8711
-Val Loss: 0.2539 | Val Accuracy: 0.8976
-Test Loss: 0.2304 | Test Accuracy: 0.9063
+Train Loss: 0.2921 | Train Accuracy: 0.8744
+Val Loss: 0.2566 | Val Accuracy: 0.9052
+Test Loss: 0.2501 | Test Accuracy: 0.9022
 
-Mejor modelo guardado (val_loss=0.2539)
+Mejor modelo guardado (val_loss=0.2566)
 
 Checkpoint guardado.
 
 ============================================================
 ÉPOCA 2/5
 ============================================================
-100%|██████████| 704/704 [08:47<00:00,  1.33it/s, loss=0.0088]
+100%|██████████| 704/704 [09:17<00:00,  1.26it/s, loss=0.4278]
 
 RESULTADOS
-Train Loss: 0.1734 | Train Accuracy: 0.9344
-Val Loss: 0.2461 | Val Accuracy: 0.9052
-Test Loss: 0.2239 | Test Accuracy: 0.9116
-
-Mejor modelo guardado (val_loss=0.2461)
-
-Checkpoint guardado.
-
-============================================================
-ÉPOCA 3/5
-============================================================
-100%|██████████| 704/704 [08:48<00:00,  1.33it/s, loss=0.0062]
-
-RESULTADOS
-Train Loss: 0.0964 | Train Accuracy: 0.9668
-Val Loss: 0.3076 | Val Accuracy: 0.9056
-Test Loss: 0.2690 | Test Accuracy: 0.9112
+Train Loss: 0.1713 | Train Accuracy: 0.9360
+Val Loss: 0.2663 | Val Accuracy: 0.8984
+Test Loss: 0.2295 | Test Accuracy: 0.9086
 
 Sin mejora (1/2)
 
 Checkpoint guardado.
 
 ============================================================
-ÉPOCA 4/5
+ÉPOCA 3/5
 ============================================================
-100%|██████████| 704/704 [08:47<00:00,  1.33it/s, loss=0.0096]
+100%|██████████| 704/704 [09:17<00:00,  1.26it/s, loss=0.0073]
 
 RESULTADOS
-Train Loss: 0.0523 | Train Accuracy: 0.9850
-Val Loss: 0.3461 | Val Accuracy: 0.9024
-Test Loss: 0.3112 | Test Accuracy: 0.9075
+Train Loss: 0.1011 | Train Accuracy: 0.9659
+Val Loss: 0.3096 | Val Accuracy: 0.8996
+Test Loss: 0.2671 | Test Accuracy: 0.9101
 
 Sin mejora (2/2)
 
 Checkpoint guardado.
 
-Early stopping activado en época 4
+Early stopping activado en época 3
 
 Entrenamiento finalizado.
 
 ### 3.2.7. Representación de curvas de aprendizaje
 
-Las curvas confirman el patrón descrito anteriormente. La perdida de entrenamiento y validacion convergen en la época 1, alcanzando el modelo su mejor generalización en la época 2 y a partir de ahí el gap entre entrenamiento y validación se amplía progresivamente. La pérdida en test (test loss) sigue de cerca a la pérdida de validcion (val loss), lo que indica que el split de validación es representativo del conjunto de test y que no hay fuga de información entre particiones. En cuanto al `accuracy`, val y test se estabilizan en torno al 90-91% desde la época 2 mientras que el `train accuracy` sigue subiendo hasta el 98.5%, confirmando el *overfitting* de épocas tardías.
+Las curvas de entrenamiento de `DistilBERT` muestran un aprendizaje mucho más rápido y eficaz que `bert-mini-uncased`. La train loss descienden rápidamente y la `accuracy` de entrenamiento supera el 96%, lo que refleja la mayor capacidad del modelo gracias a sus 66.9 millones de parámetros. Sin embargo, a partir de la segunda época la val loss empieza a aumentar mientras la pérdida de entrenamiento sigue bajando, señal clara de overfitting. Por ello, el mejor modelo corresponde a las primeras épocas y el early stopping evita seguir degradando la generalización.
 
 ```python
 epochs_range = range(1, len(train_losses_distilbert) + 1)
@@ -2726,9 +2755,11 @@ plt.savefig(r"../models/training_curves_distilbert.png", dpi=150, bbox_inches="t
 plt.show()
 ```
 
-## 3.2.8. Evaluación final sobre el conjunto de test
+### 3.2.8. Evaluación final sobre el conjunto de test
 
-Cargado el mejor modelo (época 2), la evaluación sobre las 25.000 muestras de test arroja un 91% de `accuracy` con precisión y `recall` equilibrados entre clases (0.90-0.92), lo que indica que el modelo no presenta sesgo hacia ninguna de las dos clases. Este resultado es consistente con los valores reportados en la Tabla 2 del paper original de DistilBERT (92.7%), con una ligera diferencia atribuible a que se entrenaron solo 2 épocas efectivas antes del *early stopping* y al truncamiento a 256 tokens en lugar de 512.
+Frente a bert-mini-uncased, DistilBERT consigue una mejora clara en rendimiento, pasando de un 88% a aproximadamente un 91% de accuracy en test. Además, las curvas de validación y test se mantienen bastante alineadas, indicando una buena capacidad de generalización pese al inicio de sobreajuste.
+
+La matriz de confusión confirma este mejor comportamiento. El modelo clasifica correctamente la gran mayoría de reseñas negativas y positivas, con un número de errores relativamente equilibrado entre ambas clases. Comparado con bert-mini, se observan menos errores totales y un mejor equilibrio entre precisión y recall, lo que indica que DistilBERT captura mejor el contexto semántico de las reseñas.
 
 ```python
 model_distilbert.eval()
@@ -2770,16 +2801,16 @@ plt.show()
 
               precision    recall  f1-score   support
 
-    Negativo       0.92      0.90      0.91     12500
-    Positivo       0.90      0.92      0.91     12500
+    Negativo       0.90      0.93      0.91     12500
+    Positivo       0.92      0.90      0.91     12500
 
     accuracy                           0.91     25000
    macro avg       0.91      0.91      0.91     25000
 weighted avg       0.91      0.91      0.91     25000
 
-## 3.2.9. Tiempo de inferencia sobre el test completo
+### 3.2.9. Tiempo de inferencia sobre el test completo
 
-La inferencia sobre las 25.000 muestras tarda 186.27 segundos (7.45 ms/muestra). Este tiempo es significativamente menor que el de bert-mini (520.91s) a pesar de que DistilBERT tiene 6 veces más parámetros.
+La mejora en accuracy tiene un coste computacional importante. El tiempo de inferencia sobre el conjunto de test completo pasa de 21.73 s en bert-mini-uncased a 215.39 s en DistilBERT, casi 10 veces más lento:
 
 ```python
 model_distilbert.eval()
@@ -2799,12 +2830,12 @@ print(f"Tiempo de inferencia (test completo): {inference_time_distilbert:.2f} s"
 print(f"Muestras: 25,000 | Tiempo por muestra: {inference_time_distilbert / 25000 * 1000:.3f} ms")
 ```
 
-Tiempo de inferencia (test completo): 186.27 s
-Muestras: 25,000 | Tiempo por muestra: 7.451 ms
+Tiempo de inferencia (test completo): 215.39 s
+Muestras: 25,000 | Tiempo por muestra: 8.616 ms
 
-## 3.2.10. Tabla comparativa actualizada
+### 3.2.10. Tabla comparativa actualizada
 
-DistilBERT supera a bert-mini en las dos métricas clave: 1) 3.4 puntos más de `accuracy` (90.75% vs 87.32%) y ") casi 3 veces más rápido en inferencia (186s vs 520s); a pesar de tener 6 veces más parámetros. Este resultado ilustra que un modelo más grande pero bien diseñado y preentrenado puede ser simultáneamente más preciso y más eficiente que uno pequeño con arquitectura menos optimizada, consolidando a DistilBERT como la opción dominante entre los dos hasta este punto de la práctica.
+Por tanto, DistilBERT ofrece mejores resultados, pero con un coste mucho mayor en tiempo de inferencia y consumo computacional. bert-mini resulta más eficiente y rápido, mientras que DistilBERT prioriza precisión y capacidad de representación.
 
 ```python
 # Parámetros de cada modelo
@@ -2829,8 +2860,8 @@ print(tabulate(tabla, headers=headers, tablefmt="pretty"))
 +-------------------------+------------+-----------------+-------------------+
 |         Modelo          | Parámetros | Accuracy (Test) | Tiempo Inferencia |
 +-------------------------+------------+-----------------+-------------------+
-|    bert-mini-uncased    | 11,171,074 |     0.8732      |     520.91 s      |
-| distilbert-base-uncased | 66,955,010 |     0.9075      |     186.27 s      |
+|    bert-mini-uncased    | 11,171,074 |     0.8807      |      21.73 s      |
+| distilbert-base-uncased | 66,955,010 |     0.9101      |     215.39 s      |
 +-------------------------+------------+-----------------+-------------------+
 
 ---
@@ -2855,26 +2886,101 @@ Para satisfacer el requisito de inferencia entre 5 y 10 veces más rápida que `
 `MiniBertForSequenceClassification` replica la lógica de BERT pero a escala reducida. Cada bloque transformer combina un módulo de self-attention con 4 cabezas de dimensión 32 cada una, seguido de una FFN con proyección 128 -> 512 -> 128 y activación GELU, con conexiones residuales y layer normalization en ambos sublayers. La cabeza de clasificación opera sobre el token [CLS] pasado por un pooler lineal con activación tanh, idéntico al diseño de BERT original. El total es de 5.179.266 parámetros entrenables, menos de la mitad que bert-mini-uncased.
 
 ```python
-# ============================================================
-# CONFIGURACIÓN
-# ============================================================
+# Hiperparámetros específicos del modelo custom
+MAX_LENGTH_CUSTOM = 64      # reduce la atención 
+BATCH_SIZE_CUSTOM = 64      # batch más grande porque el modelo es más pequeño
+LEARNING_RATE_CUSTOM = 3e-4
+EPOCHS_CUSTOM = 5
+PATIENCE_CUSTOM = 2
 
+# Nuevo tokenize function con max_length=64 en lugar de 256
+def tokenize_function_custom(batch):
+    return tokenizer(
+        batch["text"],
+        truncation=True,
+        max_length=MAX_LENGTH_CUSTOM  
+    )
+
+tokenized_dataset_custom = dataset.map(
+    tokenize_function_custom,
+    batched=True
+)
+
+
+# Mismo collator — padding dinámico hasta max del batch
+data_collator_custom = DataCollatorWithPadding(tokenizer=tokenizer)
+
+# Columnas necesarias
+tokenized_dataset_custom = tokenized_dataset_custom.remove_columns(["text"])
+tokenized_dataset_custom = tokenized_dataset_custom.rename_column("label", "labels")
+tokenized_dataset_custom.set_format("torch")
+
+# Split train/val igual que en ejercicio 4 (90/10)
+train_val_custom = tokenized_dataset_custom["train"].train_test_split(
+    test_size=0.1, seed=SEED
+)
+
+train_dataset_custom = train_val_custom["train"]   # 22.500
+val_dataset_custom   = train_val_custom["test"]    # 2.500
+test_dataset_custom  = tokenized_dataset_custom["test"]  # 25.000
+
+train_dataloader_custom = DataLoader(
+    train_dataset_custom,
+    shuffle=True,
+    batch_size=BATCH_SIZE_CUSTOM,
+    collate_fn=data_collator_custom
+)
+val_dataloader_custom = DataLoader(
+    val_dataset_custom,
+    batch_size=BATCH_SIZE_CUSTOM,
+    collate_fn=data_collator_custom
+)
+test_dataloader_custom = DataLoader(
+    test_dataset_custom,
+    batch_size=BATCH_SIZE_CUSTOM,
+    collate_fn=data_collator_custom
+)
+
+print(f"Batches train: {len(train_dataloader_custom)}")
+print(f"Batches val:   {len(val_dataloader_custom)}")
+print(f"Batches test:  {len(test_dataloader_custom)}")
+```
+Batches train: 352
+Batches val:   40
+Batches test:  391
+
+### 3.3.2. Configuración modelo personalizado
+
+La arquitectura se compone de un bloque de embeddings, un encoder transformer reducido y una cabeza final de clasificación. El módulo `MiniEmbeddings` combina embeddings de palabras, posiciones y segmentos, aplicando posteriormente normalización y dropout para estabilizar el entrenamiento.
+
+El mecanismo `MiniSelfAttention` implementa atención multi-head con 4 cabezas, permitiendo capturar relaciones contextuales entre tokens. Cada `MiniTransformerLayer` integra esta atención junto con una red feed-forward y conexiones residuales con layer normalization, siguiendo la estructura clásica de los transformers.
+
+El encoder `MiniEncoder` apila las dos capas transformer definidas en la configuración, mientras que `MiniBertForSequenceClassification` añade el pooler y la capa final de clasificación sobre el token `[CLS]` para realizar la predicción binaria.
+
+Los pesos del modelo se inicializan aleatoriamente mediante una distribución normal y la función de pérdida utilizada es entropía cruzada (`cross_entropy`) para la tarea de clasificación de sentimiento.
+
+
+```python
 class MiniConfig:
-    vocab_size                  = 30522
-    hidden_size                 = 128
-    num_hidden_layers           = 6
-    num_attention_heads         = 4
-    intermediate_size           = 512
-    hidden_dropout_prob         = 0.1
+    vocab_size                   = 30522
+    hidden_size                  = 160
+    num_hidden_layers            = 2        
+    num_attention_heads          = 4        
+    intermediate_size            = 256      
+    hidden_dropout_prob          = 0.1
     attention_probs_dropout_prob = 0.1
-    max_position_embeddings     = 512
-    type_vocab_size             = 2
-    num_labels                  = 2
+    max_position_embeddings      = 128      
+    type_vocab_size              = 2
+    num_labels                   = 2
 
-# ============================================================
+config       = MiniConfig()
+model_custom = MiniBertForSequenceClassification(config).to(DEVICE)
+print(f"Parámetros entrenables: {count_parameters(model_custom):,}")
+```
+Parámetros entrenables: 5,302,754
+
+```python
 # EMBEDDINGS
-# ============================================================
-
 class MiniEmbeddings(nn.Module):
 
     def __init__(self, config):
@@ -2917,10 +3023,7 @@ class MiniEmbeddings(nn.Module):
 
         return self.dropout(self.LayerNorm(embeddings))
 
-# ============================================================
 # SELF-ATTENTION
-# ============================================================
-
 class MiniSelfAttention(nn.Module):
 
     def __init__(self, config):
@@ -2956,10 +3059,7 @@ class MiniSelfAttention(nn.Module):
 
         return self.out(context)
 
-# ============================================================
 # CAPA TRANSFORMER
-# ============================================================
-
 class MiniTransformerLayer(nn.Module):
 
     def __init__(self, config):
@@ -2987,10 +3087,7 @@ class MiniTransformerLayer(nn.Module):
 
         return hidden_states
 
-# ============================================================
 # ENCODER
-# ============================================================
-
 class MiniEncoder(nn.Module):
 
     def __init__(self, config):
@@ -3005,10 +3102,7 @@ class MiniEncoder(nn.Module):
             hidden_states = layer(hidden_states, attention_mask)
         return hidden_states
 
-# ============================================================
 # MODELO COMPLETO
-# ============================================================
-
 class MiniBertForSequenceClassification(nn.Module):
 
     def __init__(self, config):
@@ -3057,11 +3151,7 @@ class MiniBertForSequenceClassification(nn.Module):
         from types import SimpleNamespace
         return SimpleNamespace(loss=loss, logits=logits)
 
-
-# ============================================================
 # INSTANCIAR Y VERIFICAR
-# ============================================================
-
 config       = MiniConfig()
 model_custom = MiniBertForSequenceClassification(config).to(DEVICE)
 
@@ -3071,54 +3161,45 @@ print(f"\nParámetros entrenables: {count_parameters(model_custom):,}")
 
 MiniBertForSequenceClassification(
   (embeddings): MiniEmbeddings(
-    (word_embeddings): Embedding(30522, 128, padding_idx=0)
-    (position_embeddings): Embedding(512, 128)
-    (token_type_embeddings): Embedding(2, 128)
-    (LayerNorm): LayerNorm((128,), eps=1e-12, elementwise_affine=True)
+    (word_embeddings): Embedding(30522, 160, padding_idx=0)
+    (position_embeddings): Embedding(128, 160)
+    (token_type_embeddings): Embedding(2, 160)
+    (LayerNorm): LayerNorm((160,), eps=1e-12, elementwise_affine=True)
     (dropout): Dropout(p=0.1, inplace=False)
   )
   (encoder): MiniEncoder(
     (layers): ModuleList(
-      (0-5): 6 x MiniTransformerLayer(
+      (0-1): 2 x MiniTransformerLayer(
         (attention): MiniSelfAttention(
-          (q): Linear(in_features=128, out_features=128, bias=True)
-          (k): Linear(in_features=128, out_features=128, bias=True)
-          (v): Linear(in_features=128, out_features=128, bias=True)
-          (out): Linear(in_features=128, out_features=128, bias=True)
+          (q): Linear(in_features=160, out_features=160, bias=True)
+          (k): Linear(in_features=160, out_features=160, bias=True)
+          (v): Linear(in_features=160, out_features=160, bias=True)
+          (out): Linear(in_features=160, out_features=160, bias=True)
           (dropout): Dropout(p=0.1, inplace=False)
         )
-        (norm1): LayerNorm((128,), eps=1e-12, elementwise_affine=True)
-        (norm2): LayerNorm((128,), eps=1e-12, elementwise_affine=True)
+        (norm1): LayerNorm((160,), eps=1e-12, elementwise_affine=True)
+        (norm2): LayerNorm((160,), eps=1e-12, elementwise_affine=True)
         (ffn): Sequential(
-          (0): Linear(in_features=128, out_features=512, bias=True)
+          (0): Linear(in_features=160, out_features=256, bias=True)
           (1): GELU(approximate='none')
-          (2): Linear(in_features=512, out_features=128, bias=True)
+          (2): Linear(in_features=256, out_features=160, bias=True)
         )
         (dropout): Dropout(p=0.1, inplace=False)
       )
     )
   )
-  (pooler): Linear(in_features=128, out_features=128, bias=True)
+  (pooler): Linear(in_features=160, out_features=160, bias=True)
   (dropout): Dropout(p=0.1, inplace=False)
-  (classifier): Linear(in_features=128, out_features=2, bias=True)
+  (classifier): Linear(in_features=160, out_features=2, bias=True)
 )
 
-Parámetros entrenables: 5,179,266
-
-### 3.3.2. Preparación de batches para entrenamiento
-
-Se reutilizan los mismos DataLoaders del ejercicio 5, usando `DataCollatorWithPadding` para padding dinámico a nivel de batch, split 90%/10% train/validación con semilla fija (22.500 train, 2.500 val, 25.000 test) y `BATCH_SIZE=32`. La tokenización es idéntica a la de los ejercicios anteriores, con truncación a `MAX_LENGTH=256` tokens mediante el tokenizador de `bert-mini-uncased`, cuyo vocabulario WordPiece de 30.522 tokens es compatible con la arquitectura personalizada al compartir el mismo `vocab_size`.
-
+Parámetros entrenables: 5,302,754
 
 ### 3.3.3. Diseño de la estrategia de entrenamiento
 
 Al entrenar desde pesos aleatorios, la estrategia difiere significativamente del *fine-tuning* de los ejercicios anteriores. Se utiliza AdamW con `lr=3e-4` (notablemente mayor que los 2e-5 empleados en los ejercicios 4 y 5), ya que con pesos inicializados aleatoriamente el modelo necesita dar pasos de gradiente más grandes para escapar de la inicialización. El `scheduler` lineal incluye un 10% de *warmup* sobre el total de pasos para estabilizar el entrenamiento en las primeras iteraciones. Se añade *gradient clipping* con `max_norm=1.0`, especialmente relevante cuando se entrena desde cero y los gradientes pueden ser inicialmente grandes. Se establece un máximo de 5 épocas con *early stopping* de paciencia 2.
 
 ```python
-LEARNING_RATE_CUSTOM = 3e-4
-EPOCHS_CUSTOM        = 5
-PATIENCE_CUSTOM      = 2
-
 optimizer_custom = AdamW(
     model_custom.parameters(),
     lr=LEARNING_RATE_CUSTOM,
@@ -3138,6 +3219,12 @@ lr_scheduler_custom = get_scheduler(
 ### 3.3.4. Entrenamiento y evaluación del modelo
 
 El entrenamiento se realiza sobre GPU T4, procesando 704 batches por época. La sesión de Kaggle colapsó durante el entrenamiento, por lo que el sistema de *checkpointing* permitió retomar el proceso desde la época 4 sin perder el progreso acumulado. El entrenamiento se detuvo en la época 5 por *early stopping*. La evolución muestra un patrón de sobreajuste pronunciado, propio de un modelo entrenado desde cero sin representaciones preentrenadas, donde la pérdida de entrenamiento cae de forma continua (0.50 -> 0.06) mientras que la pérdida de validación alcanza su mínimo en la época 2 (val_loss = 0.30) y sube de forma sostenida a partir de ahí. 
+
+```python
+if os.path.exists(CHECKPOINT_PATH_CUSTOM):
+    os.remove(CHECKPOINT_PATH_CUSTOM)
+    print("Checkpoint eliminado. Entrenamiento desde cero.")
+```
 
 ```python
 # HISTORIAL
@@ -3200,7 +3287,7 @@ for epoch in range(start_epoch_custom, EPOCHS_CUSTOM):
     train_predictions   = []
     train_labels_list   = []
 
-    progress_bar = tqdm(train_dataloader)
+    progress_bar = tqdm(train_dataloader_custom)
 
     for batch in progress_bar:
 
@@ -3228,7 +3315,7 @@ for epoch in range(start_epoch_custom, EPOCHS_CUSTOM):
 
         progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
 
-    avg_train_loss  = total_train_loss / len(train_dataloader)
+    avg_train_loss  = total_train_loss / len(train_dataloader_custom)
     train_accuracy  = accuracy_score(train_labels_list, train_predictions)
 
     train_losses_custom.append(avg_train_loss)
@@ -3242,7 +3329,7 @@ for epoch in range(start_epoch_custom, EPOCHS_CUSTOM):
     val_labels_list = []
 
     with torch.no_grad():
-        for batch in val_dataloader:
+        for batch in val_dataloader_custom:
             batch = {k: v.to(DEVICE) for k, v in batch.items()}
             outputs = model_custom(**batch)
             total_val_loss += outputs.loss.item()
@@ -3250,7 +3337,7 @@ for epoch in range(start_epoch_custom, EPOCHS_CUSTOM):
             val_predictions.extend(predictions.cpu().numpy())
             val_labels_list.extend(batch["labels"].cpu().numpy())
 
-    avg_val_loss = total_val_loss / len(val_dataloader)
+    avg_val_loss = total_val_loss / len(val_dataloader_custom)
     val_accuracy = accuracy_score(val_labels_list, val_predictions)
 
     val_losses_custom.append(avg_val_loss)
@@ -3262,7 +3349,7 @@ for epoch in range(start_epoch_custom, EPOCHS_CUSTOM):
     test_labels_list = []
 
     with torch.no_grad():
-        for batch in test_dataloader:
+        for batch in test_dataloader_custom:
             batch = {k: v.to(DEVICE) for k, v in batch.items()}
             outputs = model_custom(**batch)
             total_test_loss += outputs.loss.item()
@@ -3270,7 +3357,7 @@ for epoch in range(start_epoch_custom, EPOCHS_CUSTOM):
             test_predictions.extend(predictions.cpu().numpy())
             test_labels_list.extend(batch["labels"].cpu().numpy())
 
-    avg_test_loss = total_test_loss / len(test_dataloader)
+    avg_test_loss = total_test_loss / len(test_dataloader_custom)
     test_accuracy = accuracy_score(test_labels_list, test_predictions)
 
     test_losses_custom.append(avg_test_loss)
@@ -3325,33 +3412,72 @@ for epoch in range(start_epoch_custom, EPOCHS_CUSTOM):
 
 print("\nEntrenamiento finalizado.")
 ```
-[La session de Kaggle colapso y se tuvo que reanudar el entrenamiento por el ultimo estado guardado]
-Checkpoint encontrado.
-Reanudando entrenamiento...
-
-Continuando desde época 4
 
 ============================================================
-ÉPOCA 5/5
+ÉPOCA 1/5
 ============================================================
-100%|██████████| 704/704 [00:41<00:00, 16.96it/s, loss=0.0044]
+100%|██████████| 352/352 [00:07<00:00, 46.05it/s, loss=0.4301]
 
 RESULTADOS
-Train Loss: 0.0643 | Train Accuracy: 0.9854
-Val Loss:   0.5660 | Val Accuracy:   0.8652
-Test Loss:  0.7228 | Test Accuracy:  0.8303
+Train Loss: 0.6342 | Train Accuracy: 0.5950
+Val Loss:   0.4774 | Val Accuracy:   0.7676
+Test Loss:  0.5083 | Test Accuracy:  0.7480
 
-Sin mejora (3/2)
+Mejor modelo guardado (val_loss=0.4774)
 
 Checkpoint guardado.
 
-Early stopping activado en época 5
+============================================================
+ÉPOCA 2/5
+============================================================
+100%|██████████| 352/352 [00:07<00:00, 45.59it/s, loss=0.3822]
+
+RESULTADOS
+Train Loss: 0.4178 | Train Accuracy: 0.8136
+Val Loss:   0.4704 | Val Accuracy:   0.7760
+Test Loss:  0.5144 | Test Accuracy:  0.7461
+
+Mejor modelo guardado (val_loss=0.4704)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA 3/5
+============================================================
+100%|██████████| 352/352 [00:07<00:00, 44.91it/s, loss=0.3740]
+
+RESULTADOS
+Train Loss: 0.2975 | Train Accuracy: 0.8818
+Val Loss:   0.5545 | Val Accuracy:   0.7756
+Test Loss:  0.6074 | Test Accuracy:  0.7397
+
+Sin mejora (1/2)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA 4/5
+============================================================
+100%|██████████| 352/352 [00:07<00:00, 45.97it/s, loss=0.2419]
+
+RESULTADOS
+Train Loss: 0.2073 | Train Accuracy: 0.9229
+Val Loss:   0.6828 | Val Accuracy:   0.7628
+Test Loss:  0.7424 | Test Accuracy:  0.7282
+
+Sin mejora (2/2)
+
+Checkpoint guardado.
+
+Early stopping activado en época 4
 
 Entrenamiento finalizado.
 
 ### 3.3.6. Representación de curvas de aprendizaje
 
-Las curvas ilustran con claridad la diferencia fundamental entre entrenar desde cero y hacer *fine-tuning*. La pérdida de entrenamiento (train loss) cae de forma continua y agresiva a lo largo de las 5 épocas, señal de que el modelo tiene capacidad suficiente para memorizar el conjunto de entrenamiento. Sin embargo, la pérdida de validación (val loss) alcanza su mínimo en la época 2 y se dispara progresivamente a partir de ahí, abriendo un gap pronunciado respecto al entrenamiento que evidencia un *overfitting* severo desde la época 3. La pérdida en test (test loss) amplifica este patrón, divergiendo incluso más rápido que la validación. En cuanto al `accuracy`, tanto validación como test se estabilizan en torno al 83-87% a partir de la época 2, mientras que el `train accuracy` continúa subiendo hasta el 98.5%, confirmando el sobreajuste de las épocas tardías. El punto óptimo de generalización queda claramente delimitado en la época 2, marcado implícitamente por el *checkpoint* del mejor modelo.
+Las curvas muestran un patrón claro de sobreajuste a partir de la época 2. La pérdida de entrenamiento disminuye de forma continua (0.6342 → 0.2073), mientras que la pérdida de validación y test aumenta progresivamente tras alcanzar su mínimo en la segunda época. Esto indica que el modelo continúa aprendiendo patrones específicos del conjunto de entrenamiento, pero pierde capacidad de generalización sobre datos no vistos.
+
+La evolución del accuracy confirma este comportamiento. El train accuracy aumenta rápidamente hasta 0.9229, mientras que las métricas de validación y test permanecen prácticamente estables alrededor del 0.74-0.77 e incluso empeoran ligeramente en las últimas épocas. El mejor punto de generalización se alcanza en la época 2, motivo por el cual el sistema de early stopping detuvo automáticamente el entrenamiento en la época 4.
 
 ```python
 # ============================================================
@@ -3388,7 +3514,9 @@ plt.show()
 
 ### 3.3.7. Evaluación final sobre el conjunto de test
 
-La evaluación sobre las 25.000 muestras de test arroja un 83.03% de `accuracy`. A diferencia de los modelos preentrenados, se observa que la precisión para la clase negativa (0.81) es inferior a la del positivo (0.86), mientras que el `recall` invierte esta relación (0.87 negativo frente a 0.79 positivo). Esto indica que el modelo tiende a predecir más positivos de los que realmente hay, un sesgo esperable en un modelo entrenado desde cero con recursos limitados y sin las representaciones lingüísticas generales que aporta el preentrenamiento. El resultado supone una caída de 4.3 puntos respecto a bert-mini (87.32%) y de 7.7 puntos respecto a DistilBERT (90.75%).
+La evaluación final sobre las 25.000 muestras de test obtiene una accuracy de 0.7282. El modelo presenta un comportamiento relativamente equilibrado entre ambas clases, con métricas similares para sentimientos negativos y positivos. La clase negativa alcanza una precisión de 0.74 y un recall de 0.71, mientras que la clase positiva obtiene una precisión de 0.72 y un recall de 0.75.
+
+Estos resultados son inferiores a los obtenidos con modelos preentrenados como bert-mini-uncased o DistilBERT, lo que refleja la dificultad de entrenar modelos transformer desde cero con recursos limitados y sin conocimiento lingüístico previo. Aun así, el modelo mantiene una capacidad razonable de clasificación considerando su tamaño reducido y su enfoque centrado en maximizar la velocidad de inferencia.
 
 ```python
 # EVALUACIÓN FINAL SOBRE TEST
@@ -3430,16 +3558,20 @@ plt.show()
 
               precision    recall  f1-score   support
 
-    Negativo       0.81      0.87      0.84     12500
-    Positivo       0.86      0.79      0.82     12500
+    Negativo       0.74      0.71      0.72     12500
+    Positivo       0.72      0.75      0.73     12500
 
-    accuracy                           0.83     25000
-   macro avg       0.83      0.83      0.83     25000
-weighted avg       0.83      0.83      0.83     25000
+    accuracy                           0.73     25000
+   macro avg       0.73      0.73      0.73     25000
+weighted avg       0.73      0.73      0.73     25000
+
+
 
 ### 3.3.8. Tiempo de inferencia sobre el test completo
 
-La inferencia sobre las 25.000 muestras tarda 15.16 segundos (0.607 ms/muestra), lo que supone una enorme aceleración respecto a bert-mini (520.91 s) y no tan grande pero aun así muy significativa respecto a DistilBERT (186.27 s). Este resultado supera con creces el objetivo marcado de 5-10 veces de mejora sobre el ejercicio 4, y confirma que la reducción de la dimensión oculta de 256 a 128 tiene un impacto en inferencia mucho mayor que la simple reducción del número de parámetros.
+La inferencia sobre las 25.000 muestras del conjunto de test tarda únicamente 4.29 segundos, equivalente a 0.172 ms por muestra. Este resultado supone una aceleración aproximada de 5 veces respecto a bert-mini-uncased (21.73 s), cumpliendo el objetivo planteado en el ejercicio.
+
+La reducción del número de capas transformer, del tamaño oculto y de la longitud máxima de secuencia permite disminuir considerablemente el coste computacional del mecanismo de atención, logrando tiempos de inferencia muy bajos incluso manteniendo una arquitectura basada en transformers.
 
 ```python
 # TIEMPO DE INFERENCIA
@@ -3465,7 +3597,9 @@ Muestras: 25,000 | Tiempo por muestra: 0.607 ms
 
 ### 3.3.9. Tabla comparativa actualizada
 
-`minibert-custom` ocupa un nicho diferente al de los modelos preentrenados, sacrificando 4.3 puntos de `accuracy` respecto a `bert-mini`, pero es 34 veces más rápido en inferencia y tiene la mitad de parámetros. Para escenarios donde la latencia es crítica y se puede asumir una ligera pérdida de rendimiento, este modelo constituye la opción más eficiente del estudio hasta este punto. El *trade-off* entre los tres modelos queda claro: 1) `DistilBERT` maximiza la accuracy (91%), 2) `bert-mini` ofrece un equilibrio intermedio (87%, 520 s) y 3) `minibert-custom` prioriza la velocidad (83%, 15 s).
+`minibert-custom` prioriza claramente la velocidad frente al rendimiento predictivo. Aunque su `accuracy` (0.7282) es inferior a la de los modelos preentrenados, consigue reducir drásticamente el tiempo de inferencia y el número de parámetros entrenables.
+
+El modelo contiene aproximadamente la mitad de parámetros que `bert-mini-uncased` y alcanza inferencias unas 5 veces más rápidas, cumpliendo el requisito principal del ejercicio. En conjunto, los resultados muestran el compromiso clásico entre precisión y eficiencia. Por tanto, `DistilBERT` maximiza el rendimiento, `bert-mini` ofrece un equilibrio intermedio y `minibert-custom` optimiza la velocidad de inferencia.
 
 ```python
 # TABLA COMPARATIVA
@@ -3481,12 +3615,13 @@ headers = ["Modelo", "Parámetros", "Accuracy (Test)", "Tiempo Inferencia"]
 print(tabulate(tabla, headers=headers, tablefmt="pretty"))
 ```
 
-+-------------------+------------+-----------------+-------------------+
-|      Modelo       | Parámetros | Accuracy (Test) | Tiempo Inferencia |
-+-------------------+------------+-----------------+-------------------+
-| bert-mini-uncased | 11,171,074 |     0.8732      |     520.91 s      |
-|  minibert-custom  | 5,179,266  |     0.8303      |      15.16 s      |
-+-------------------+------------+-----------------+-------------------+
++-------------------------+------------+-----------------+-------------------+
+|         Modelo          | Parámetros | Accuracy (Test) | Tiempo Inferencia |
++-------------------------+------------+-----------------+-------------------+
+|    bert-mini-uncased    | 11,171,074 |     0.8807      |      21.73 s      |
+| distilbert-base-uncased | 66,955,010 |     0.9101      |     215.39 s      |
+|     minibert-custom     | 5,302,754  |     0.7282      |      4.29 s       |
++-------------------------+------------+-----------------+-------------------+
 
 
 ---
@@ -3527,84 +3662,94 @@ La temperatura T = 4.0 suaviza las distribuciones del *teacher*, amplificando la
 El optimizador es AdamW con `lr=1e-4`, valor inferior al del ejercicio 6 (3e-4) dado que el *student* ya dispone de una base entrenada y pasos demasiado grandes podrían desestabilizar las representaciones aprendidas. El `scheduler` lineal incluye un 10% de warmup y se establece un máximo de 5 épocas con early stopping de paciencia 2.
 
 ```python
-# Funcion de pérdida — KNOWLEDGE DISTILLATION (KD)
-def distillation_loss(
-    student_logits,
-    teacher_logits,
-    labels,
-    temperature=4.0,
-    alpha=0.7
-):
+def distillation_loss(student_logits, teacher_logits, labels, alpha, temperature):
     """
     Loss combinada:
       - KD loss  : KL divergence entre distribuciones suavizadas (soft targets)
       - CE loss  : Cross-entropy contra etiquetas reales (hard targets)
 
     alpha controla el peso de cada componente:
-      - alpha alto  → el student aprende más del teacher
-      - alpha bajo  → el student aprende más de las etiquetas reales
+      - alpha alto  -> el student aprende más del teacher
+      - alpha bajo  -> el student aprende más de las etiquetas reales
     """
-
     # Soft targets: suavizar distribuciones con temperatura T
-    soft_teacher = F.softmax(teacher_logits / temperature, dim=-1)
     soft_student = F.log_softmax(student_logits / temperature, dim=-1)
+    soft_teacher = F.softmax(teacher_logits  / temperature, dim=-1)
 
-    # KL divergence — multiplicamos por T² para compensar la escala
     kd_loss = F.kl_div(
         soft_student,
         soft_teacher,
         reduction="batchmean"
     ) * (temperature ** 2)
 
-    # Cross-entropy sobre etiquetas reales
+    # Hard labels: cross-entropy estándar
     ce_loss = F.cross_entropy(student_logits, labels)
 
-    return alpha * kd_loss + (1 - alpha) * ce_loss
-
-# Hiperparámetros KD
-TEMPERATURE = 4.0   # suaviza las distribuciones del teacher
-ALPHA       = 0.7   # peso KD loss vs CE loss
-EPOCHS_KD   = 5
-PATIENCE_KD = 2
-LR_KD       = 1e-4  # más bajo que ejercicio 6 — ya tiene base entrenada
+    return alpha * kd_loss + (1.0 - alpha) * ce_loss
 ```
 
-### 3.4.2. Entrenamiento mediante destilación
-
-El entrenamiento se realiza sobre GPU T4, procesando 704 batches por época. El sistema de *checkpointing* guarda el estado completo al final de cada época, permitiendo reanudar el proceso ante cualquier interrupción de sesión. El entrenamiento se detuvo en la época 4 por early stopping, ya que la pérdida de validación no mejoró en las dos épocas siguientes al mínimo alcanzado en la época 2. El mejor modelo corresponde a la época 2 con `val_loss = 0.3918`, punto en el que la transferencia del *teacher* es máxima antes de que el *student* comience a sobreajustar los *soft targets*.
-
 ```python
-# Preparar teacher (DistilBERT - ejercicio 5)
-# Cargar mejor modelo del ejercicio 5
-model_distilbert.load_state_dict(
-    torch.load(BEST_MODEL_PATH, map_location=DEVICE)
-)
+# Hiperparámetros KD
+TEMPERATURE  = 4.0   # T > 1 suaviza las distribuciones del teacher
+ALPHA        = 0.7   # 70% KD loss + 30% CE loss
+EPOCHS_KD    = 5
+PATIENCE_KD  = 2
+LR_KD        = 1e-4  # LR menor, el student ya está pre-entrenado
 
-# El teacher se congela — no actualiza pesos
-model_distilbert.eval()
-for param in model_distilbert.parameters():
+# TEACHER: mejor checkpoint de DistilBERT (ejercicio 5) 
+BEST_MODEL_PATH_DISTILBERT = f"{CHECKPOINT_DIR}/best_distilbert_imdb.pt"
+
+model_teacher = AutoModelForSequenceClassification.from_pretrained(
+    "distilbert-base-uncased",
+    num_labels=2
+).to(DEVICE)
+model_teacher.load_state_dict(
+    torch.load(BEST_MODEL_PATH_DISTILBERT, map_location=DEVICE)
+)
+model_teacher.eval()
+
+# Congelar teacher — nunca se actualiza
+for param in model_teacher.parameters():
     param.requires_grad = False
 
 print("Teacher cargado y congelado.")
-print(f"Parámetros teacher: {count_parameters(model_distilbert):,}")
 
-# Preparar student (MiniBERT - ejercicio 6)
-# Cargar mejor modelo del ejercicio 6
+# STUDENT: mejor checkpoint del ejercicio 6 
 model_student = MiniBertForSequenceClassification(config).to(DEVICE)
 model_student.load_state_dict(
     torch.load(BEST_MODEL_PATH_CUSTOM, map_location=DEVICE)
 )
+print("Student cargado con pesos del ejercicio 6.")
+print(f"Parámetros entrenables student: {count_parameters(model_student):,}")
+```
+DistilBertForSequenceClassification LOAD REPORT from: distilbert-base-uncased
+Key                     | Status     | 
+------------------------+------------+-
+vocab_projector.bias    | UNEXPECTED | 
+vocab_transform.weight  | UNEXPECTED | 
+vocab_layer_norm.bias   | UNEXPECTED | 
+vocab_layer_norm.weight | UNEXPECTED | 
+vocab_transform.bias    | UNEXPECTED | 
+pre_classifier.weight   | MISSING    | 
+classifier.bias         | MISSING    | 
+pre_classifier.bias     | MISSING    | 
+classifier.weight       | MISSING    | 
 
-print("\nStudent cargado desde ejercicio 6.")
-print(f"Parámetros student: {count_parameters(model_student):,}")
+Notes:
+- UNEXPECTED	:can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+- MISSING	:those params were newly initialized because missing from the checkpoint. Consider training on your downstream task.
+Teacher cargado y congelado.
+Student cargado con pesos del ejercicio 6.
+Parámetros entrenables student: 5,302,754
 
+```python
 optimizer_kd = AdamW(
     model_student.parameters(),
     lr=LR_KD,
     weight_decay=0.01
 )
 
-num_training_steps_kd = EPOCHS_KD * len(train_dataloader)
+num_training_steps_kd = EPOCHS_KD * len(train_dataloader_custom)
 
 lr_scheduler_kd = get_scheduler(
     name="linear",
@@ -3612,12 +3757,14 @@ lr_scheduler_kd = get_scheduler(
     num_warmup_steps=num_training_steps_kd // 10,
     num_training_steps=num_training_steps_kd
 )
+```
 
-# Checkpoints KD
-CHECKPOINT_PATH_KD = f"{CHECKPOINT_DIR}/kd_checkpoint.pt"
-BEST_MODEL_PATH_KD = f"{CHECKPOINT_DIR}/best_kd_imdb.pt"
+### 3.4.2. Entrenamiento mediante destilación
 
-# Historical KD
+El entrenamiento se realiza sobre GPU T4, procesando 704 batches por época. El sistema de *checkpointing* guarda el estado completo al final de cada época, permitiendo reanudar el proceso ante cualquier interrupción de sesión. El entrenamiento se detuvo en la época 4 por early stopping, ya que la pérdida de validación no mejoró en las dos épocas siguientes al mínimo alcanzado en la época 2. El mejor modelo corresponde a la época 2 con `val_loss = 0.3918`, punto en el que la transferencia del *teacher* es máxima antes de que el *student* comience a sobreajustar los *soft targets*.
+
+```python
+# HISTORIAL
 train_losses_kd = []
 val_losses_kd   = []
 test_losses_kd  = []
@@ -3626,23 +3773,18 @@ train_accuracies_kd = []
 val_accuracies_kd   = []
 test_accuracies_kd  = []
 
-# Early stopping KD
-best_val_loss_kd        = float("inf")
-epochs_without_improvement_kd = 0
+CHECKPOINT_PATH_KD = f"{CHECKPOINT_DIR}/kd_checkpoint.pt"
+BEST_MODEL_PATH_KD = f"{CHECKPOINT_DIR}/best_kd_imdb.pt"
 
-# Reanudar checkpoint KD
-start_epoch_kd = 0
+best_val_loss_kd              = float("inf")
+epochs_without_improvement_kd = 0
+start_epoch_kd                = 0
 
 if os.path.exists(CHECKPOINT_PATH_KD):
-
-    print("\nCheckpoint KD encontrado. Reanudando...\n")
-
     checkpoint = torch.load(CHECKPOINT_PATH_KD, map_location=DEVICE)
-
     model_student.load_state_dict(checkpoint["model_state_dict"])
     optimizer_kd.load_state_dict(checkpoint["optimizer_state_dict"])
     lr_scheduler_kd.load_state_dict(checkpoint["scheduler_state_dict"])
-
     start_epoch_kd                = checkpoint["epoch"] + 1
     best_val_loss_kd              = checkpoint["best_val_loss"]
     epochs_without_improvement_kd = checkpoint["epochs_without_improvement"]
@@ -3652,158 +3794,142 @@ if os.path.exists(CHECKPOINT_PATH_KD):
     train_accuracies_kd           = checkpoint["train_accuracies"]
     val_accuracies_kd             = checkpoint["val_accuracies"]
     test_accuracies_kd            = checkpoint["test_accuracies"]
+    print(f"Checkpoint encontrado. Reanudando desde época {start_epoch_kd}")
 
-    print(f"Continuando desde época {start_epoch_kd}")
-
-# Entrenamiento KD
 for epoch in range(start_epoch_kd, EPOCHS_KD):
 
     print(f"\n{'='*60}")
-    print(f"ÉPOCA {epoch + 1}/{EPOCHS_KD}")
+    print(f"ÉPOCA KD {epoch + 1}/{EPOCHS_KD}  |  T={TEMPERATURE}  alpha={ALPHA}")
     print(f"{'='*60}")
 
-    # train
+    # ── TRAIN ──────────────────────────────────────────────────
     model_student.train()
-
     total_train_loss  = 0
     train_predictions = []
     train_labels_list = []
 
-    progress_bar = tqdm(train_dataloader)
+    progress_bar = tqdm(train_dataloader_custom)
 
     for batch in progress_bar:
-
         batch = {k: v.to(DEVICE) for k, v in batch.items()}
+
+        # Teacher: solo input_ids y attention_mask (sin token_type_ids)
+        with torch.no_grad():
+            teacher_out = model_teacher(
+                input_ids      = batch["input_ids"],
+                attention_mask = batch["attention_mask"]
+            )
+            teacher_logits = teacher_out.logits  # [B, 2]
 
         optimizer_kd.zero_grad()
 
-        # Teacher — sin gradientes
-        with torch.no_grad():
-            teacher_outputs = model_distilbert(**batch)
-            teacher_logits  = teacher_outputs.logits
+        student_out    = model_student(**batch)
+        student_logits = student_out.logits      # [B, 2]
 
-        # Student — con gradientes
-        student_outputs = model_student(**batch)
-        student_logits  = student_outputs.logits
-
-        # Loss KD
         loss = distillation_loss(
-            student_logits,
-            teacher_logits,
-            batch["labels"],
-            temperature=TEMPERATURE,
-            alpha=ALPHA
+            student_logits = student_logits,
+            teacher_logits = teacher_logits,
+            labels         = batch["labels"],
+            alpha          = ALPHA,
+            temperature    = TEMPERATURE
         )
 
         loss.backward()
-
         torch.nn.utils.clip_grad_norm_(model_student.parameters(), max_norm=1.0)
-
         optimizer_kd.step()
         lr_scheduler_kd.step()
 
         total_train_loss += loss.item()
-
         predictions = torch.argmax(student_logits, dim=-1)
         train_predictions.extend(predictions.detach().cpu().numpy())
         train_labels_list.extend(batch["labels"].detach().cpu().numpy())
-
         progress_bar.set_postfix({"loss": f"{loss.item():.4f}"})
 
-    avg_train_loss = total_train_loss / len(train_dataloader)
+    avg_train_loss = total_train_loss / len(train_dataloader_custom)
     train_accuracy = accuracy_score(train_labels_list, train_predictions)
-
     train_losses_kd.append(avg_train_loss)
     train_accuracies_kd.append(train_accuracy)
 
-    # validación
+    # ── VALIDACIÓN ─────────────────────────────────────────────
     model_student.eval()
-
     total_val_loss  = 0
     val_predictions = []
     val_labels_list = []
 
     with torch.no_grad():
-        for batch in val_dataloader:
+        for batch in val_dataloader_custom:
             batch = {k: v.to(DEVICE) for k, v in batch.items()}
 
-            teacher_logits  = model_distilbert(**batch).logits
-            student_outputs = model_student(**batch)
+            teacher_logits = model_teacher(
+                input_ids      = batch["input_ids"],
+                attention_mask = batch["attention_mask"]
+            ).logits
 
+            student_out = model_student(**batch)
             loss = distillation_loss(
-                student_outputs.logits,
-                teacher_logits,
-                batch["labels"],
-                temperature=TEMPERATURE,
-                alpha=ALPHA
+                student_logits = student_out.logits,
+                teacher_logits = teacher_logits,
+                labels         = batch["labels"],
+                alpha          = ALPHA,
+                temperature    = TEMPERATURE
             )
-
             total_val_loss += loss.item()
-
-            predictions = torch.argmax(student_outputs.logits, dim=-1)
+            predictions = torch.argmax(student_out.logits, dim=-1)
             val_predictions.extend(predictions.cpu().numpy())
             val_labels_list.extend(batch["labels"].cpu().numpy())
 
-    avg_val_loss = total_val_loss / len(val_dataloader)
+    avg_val_loss = total_val_loss / len(val_dataloader_custom)
     val_accuracy = accuracy_score(val_labels_list, val_predictions)
-
     val_losses_kd.append(avg_val_loss)
     val_accuracies_kd.append(val_accuracy)
 
-    # test
+    # ── TEST ───────────────────────────────────────────────────
     total_test_loss  = 0
     test_predictions = []
     test_labels_list = []
 
     with torch.no_grad():
-        for batch in test_dataloader:
+        for batch in test_dataloader_custom:
             batch = {k: v.to(DEVICE) for k, v in batch.items()}
 
-            teacher_logits  = model_distilbert(**batch).logits
-            student_outputs = model_student(**batch)
+            teacher_logits = model_teacher(
+                input_ids      = batch["input_ids"],
+                attention_mask = batch["attention_mask"]
+            ).logits
 
+            student_out = model_student(**batch)
             loss = distillation_loss(
-                student_outputs.logits,
-                teacher_logits,
-                batch["labels"],
-                temperature=TEMPERATURE,
-                alpha=ALPHA
+                student_logits = student_out.logits,
+                teacher_logits = teacher_logits,
+                labels         = batch["labels"],
+                alpha          = ALPHA,
+                temperature    = TEMPERATURE
             )
-
             total_test_loss += loss.item()
-
-            predictions = torch.argmax(student_outputs.logits, dim=-1)
+            predictions = torch.argmax(student_out.logits, dim=-1)
             test_predictions.extend(predictions.cpu().numpy())
             test_labels_list.extend(batch["labels"].cpu().numpy())
 
-    avg_test_loss = total_test_loss / len(test_dataloader)
+    avg_test_loss = total_test_loss / len(test_dataloader_custom)
     test_accuracy = accuracy_score(test_labels_list, test_predictions)
-
     test_losses_kd.append(avg_test_loss)
     test_accuracies_kd.append(test_accuracy)
 
-    # Resultados
+    # ── RESULTADOS ─────────────────────────────────────────────
     print("\nRESULTADOS")
     print(f"Train Loss: {avg_train_loss:.4f} | Train Accuracy: {train_accuracy:.4f}")
     print(f"Val Loss:   {avg_val_loss:.4f} | Val Accuracy:   {val_accuracy:.4f}")
     print(f"Test Loss:  {avg_test_loss:.4f} | Test Accuracy:  {test_accuracy:.4f}")
 
-    # Mejor modelo KD
     if avg_val_loss < best_val_loss_kd:
-
         best_val_loss_kd              = avg_val_loss
         epochs_without_improvement_kd = 0
-
         torch.save(model_student.state_dict(), BEST_MODEL_PATH_KD)
-
         print(f"\nMejor modelo KD guardado (val_loss={best_val_loss_kd:.4f})")
-
     else:
-
         epochs_without_improvement_kd += 1
         print(f"\nSin mejora ({epochs_without_improvement_kd}/{PATIENCE_KD})")
 
-    # Checkpoint KD
     checkpoint = {
         "epoch":                      epoch,
         "model_state_dict":           model_student.state_dict(),
@@ -3818,12 +3944,9 @@ for epoch in range(start_epoch_kd, EPOCHS_KD):
         "val_accuracies":             val_accuracies_kd,
         "test_accuracies":            test_accuracies_kd,
     }
-
     torch.save(checkpoint, CHECKPOINT_PATH_KD)
-
     print("\nCheckpoint guardado.")
 
-    # Early stopping
     if epochs_without_improvement_kd >= PATIENCE_KD:
         print(f"\nEarly stopping activado en época {epoch + 1}")
         break
@@ -3831,69 +3954,75 @@ for epoch in range(start_epoch_kd, EPOCHS_KD):
 print("\nEntrenamiento KD finalizado.")
 ```
 
-Teacher cargado y congelado.
-Parámetros teacher: 0
-
-Student cargado desde ejercicio 6.
-Parámetros student: 5,179,266
-
 ============================================================
-ÉPOCA 1/5
+ÉPOCA KD 1/5  |  T=4.0  alpha=0.7
 ============================================================
-100%|██████████| 704/704 [03:29<00:00,  3.36it/s, loss=0.3544]
+100%|██████████| 352/352 [00:50<00:00,  6.91it/s, loss=0.5340]
 
 RESULTADOS
-Train Loss: 0.2537 | Train Accuracy: 0.9494
-Val Loss:   0.4201 | Val Accuracy:   0.8800
-Test Loss:  0.4930 | Test Accuracy:  0.8543
+Train Loss: 0.4070 | Train Accuracy: 0.8697
+Val Loss:   0.4706 | Val Accuracy:   0.7788
+Test Loss:  0.4926 | Test Accuracy:  0.7538
 
-Mejor modelo KD guardado (val_loss=0.4201)
+Mejor modelo KD guardado (val_loss=0.4706)
 
 Checkpoint guardado.
 
 ============================================================
-ÉPOCA 2/5
+ÉPOCA KD 2/5  |  T=4.0  alpha=0.7
 ============================================================
-100%|██████████| 704/704 [03:43<00:00,  3.14it/s, loss=0.2016]
+100%|██████████| 352/352 [00:49<00:00,  7.14it/s, loss=0.3500]
 
 RESULTADOS
-Train Loss: 0.2121 | Train Accuracy: 0.9551
-Val Loss:   0.3918 | Val Accuracy:   0.8764
-Test Loss:  0.4628 | Test Accuracy:  0.8556
+Train Loss: 0.3408 | Train Accuracy: 0.8607
+Val Loss:   0.4349 | Val Accuracy:   0.7868
+Test Loss:  0.4708 | Test Accuracy:  0.7653
 
-Mejor modelo KD guardado (val_loss=0.3918)
+Mejor modelo KD guardado (val_loss=0.4349)
 
 Checkpoint guardado.
 
 ============================================================
-ÉPOCA 3/5
+ÉPOCA KD 3/5  |  T=4.0  alpha=0.7
 ============================================================
-100%|██████████| 704/704 [03:44<00:00,  3.13it/s, loss=0.1102]
+100%|██████████| 352/352 [00:48<00:00,  7.22it/s, loss=0.2077]
 
 RESULTADOS
-Train Loss: 0.1723 | Train Accuracy: 0.9654
-Val Loss:   0.4102 | Val Accuracy:   0.8772
-Test Loss:  0.4710 | Test Accuracy:  0.8553
+Train Loss: 0.3062 | Train Accuracy: 0.8617
+Val Loss:   0.4275 | Val Accuracy:   0.7800
+Test Loss:  0.4568 | Test Accuracy:  0.7617
+
+Mejor modelo KD guardado (val_loss=0.4275)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA KD 4/5  |  T=4.0  alpha=0.7
+============================================================
+100%|██████████| 352/352 [00:48<00:00,  7.23it/s, loss=0.2613]
+
+RESULTADOS
+Train Loss: 0.2853 | Train Accuracy: 0.8621
+Val Loss:   0.4267 | Val Accuracy:   0.7780
+Test Loss:  0.4573 | Test Accuracy:  0.7626
+
+Mejor modelo KD guardado (val_loss=0.4267)
+
+Checkpoint guardado.
+
+============================================================
+ÉPOCA KD 5/5  |  T=4.0  alpha=0.7
+============================================================
+100%|██████████| 352/352 [00:48<00:00,  7.21it/s, loss=0.2768]
+
+RESULTADOS
+Train Loss: 0.2709 | Train Accuracy: 0.8636
+Val Loss:   0.4322 | Val Accuracy:   0.7780
+Test Loss:  0.4591 | Test Accuracy:  0.7616
 
 Sin mejora (1/2)
 
 Checkpoint guardado.
-
-============================================================
-ÉPOCA 4/5
-============================================================
-100%|██████████| 704/704 [03:44<00:00,  3.14it/s, loss=0.0816]
-
-RESULTADOS
-Train Loss: 0.1506 | Train Accuracy: 0.9686
-Val Loss:   0.4158 | Val Accuracy:   0.8740
-Test Loss:  0.4845 | Test Accuracy:  0.8530
-
-Sin mejora (2/2)
-
-Checkpoint guardado.
-
-Early stopping activado en época 4
 
 Entrenamiento KD finalizado.
 
@@ -3982,12 +4111,13 @@ plt.show()
 
               precision    recall  f1-score   support
 
-    Negativo       0.85      0.87      0.86     12500
-    Positivo       0.86      0.85      0.85     12500
+    Negativo       0.82      0.67      0.74     12500
+    Positivo       0.72      0.85      0.78     12500
 
-    accuracy                           0.86     25000
-   macro avg       0.86      0.86      0.86     25000
-weighted avg       0.86      0.86      0.86     25000
+    accuracy                           0.76     25000
+   macro avg       0.77      0.76      0.76     25000
+weighted avg       0.77      0.76      0.76     25000
+
 
 ### 3.4.5. Tiempo de inferencia sobre el test completo
 
@@ -4010,7 +4140,8 @@ inference_time_kd = time.time() - start_time
 print(f"Tiempo de inferencia: {inference_time_kd:.2f} s")
 print(f"Tiempo por muestra:   {inference_time_kd / 25000 * 1000:.3f} ms")
 ```
-
+Tiempo de inferencia: 4.76 s
+Tiempo por muestra:   0.190 ms
 ### 3.4.6. Tabla comparativa final
 
 La tabla recoge los cuatro modelos de la práctica. `minibert-kd` ocupa el mismo nicho de eficiencia que `minibert-custom` pero mejora su `accuracy` en 2.5 puntos (85.56% vs. 83.03%) sin coste adicional en inferencia (16.38 s vs. 15.16 s), lo que valida la destilación como técnica efectiva para exprimir el rendimiento de un modelo pequeño más allá de lo que permite el aprendizaje supervisado directo. La brecha respecto a `bert-mini-uncased` (87.32%) se reduce a tan solo 1.76 puntos, con una inferencia enormemente más rápida y con la mitad de parámetros, consolidando a `minibert-kd` como la opción más equilibrada del estudio para escenarios de producción con restricciones de latencia.
@@ -4036,18 +4167,22 @@ print(tabulate(tabla, headers=headers, tablefmt="pretty"))
 +-------------------------+------------+-----------------+-------------------+
 |         Modelo          | Parámetros | Accuracy (Test) | Tiempo Inferencia |
 +-------------------------+------------+-----------------+-------------------+
-|    bert-mini-uncased    | 11,171,074 |     0.8732      |     520.91 s      |
-| distilbert-base-uncased | 66,955,010 |     0.9075      |     186.27 s      |
-|     minibert-custom     | 5,179,266  |     0.8303      |      15.16 s      |
-|       minibert-kd       | 5,179,266  |     0.8556      |      16.38 s      |
+|    bert-mini-uncased    | 11,171,074 |     0.8807      |      21.73 s      |
+| distilbert-base-uncased | 66,955,010 |     0.9101      |     215.39 s      |
+|     minibert-custom     | 5,302,754  |     0.7282      |      4.29 s       |
+|       minibert-kd       | 5,302,754  |     0.7616      |      4.76 s       |
 +-------------------------+------------+-----------------+-------------------+
 
 ### 3.4.7. Reflexión final
 
-Los cuatro ejercicios ilustran con claridad el *trade-off* entre capacidad, coste de cómputo y estrategia de entrenamiento en el contexto del procesamiento de lenguaje natural. 
+El conjunto de experimentos permite observar con claridad el compromiso entre capacidad del modelo, coste computacional y estrategia de entrenamiento.
 
-Por un lado, el resultado más llamativo ocurre en `bert-mini-uncased` (ejercicio 4), donde un modelo 6 veces menor que `DistilBERT` resulta casi 3 veces más lento en inferencia, lo que demuestra que el tamaño en parámetros no es el único determinante de la eficiencia y que la arquitectura y el entorno de ejecución (dimensión oculta, paralelismo de GPU) juegan un papel decisivo. 
+El entrenamiento desde cero del modelo compacto muestra limitaciones evidentes de generalización, con tendencia al sobreajuste y rendimiento inferior. En contraste, la destilación de conocimiento permite mejorar significativamente este modelo sin modificar su arquitectura ni su coste de inferencia.
 
-Por otro lado, el ejercicio 6 pone de manifiesto la dificultad de entrenar transformers desde cero con datos limitados, apareciendo *overfitting* de forma abrupta desde la época 3. 
+El principal aporte del *teacher* no es solo mejorar la precisión, sino proporcionar una señal de aprendizaje más rica y suave, que reduce el ruido en las actualizaciones y mejora la estabilidad del entrenamiento.
 
-Finalmente, la destilación del ejercicio 7 demuestra ser la estrategia más rentable del estudio, puesto que con la misma arquitectura y sin coste adicional en inferencia, el *student* recupera 2.5 puntos de `accuracy` respecto al entrenamiento supervisado directo, corrige el sesgo de clase observado en el ejercicio 6 y se aproxima a `bert-mini-uncased`, pero casi 30 veces más rápido. Destacar que la principal dificultad encontrada en KD fue la elección del valor de $\alpha$, donde valores demasiado altos (> 0.8) hacían que el *student* ignorase las etiquetas reales y no converjiese, mientras que valores bajos (< 0.5) reducían la destilación a un simple *fine-tuning* con ruido adicional. El valor $\alpha$ = 0.7 con T = 4.0 resultó el equilibrio más estable en este experimento.
+Sin embargo, el método sigue siendo sensible a la configuración de hiperparámetros. En particular, el equilibrio entre la pérdida supervisada y la destilada resulta crítico: valores altos de ($\alpha$) pueden hacer que el modelo ignore las etiquetas reales, mientras que valores bajos reducen el efecto de la destilación.
+
+En este caso, la configuración con (T = 4.0) y ($\alpha$ = 0.7) ofrece el mejor compromiso entre estabilidad, aprendizaje y generalización.
+
+En conjunto, la destilación se consolida como la estrategia más eficiente del estudio para modelos compactos, al mejorar el rendimiento sin comprometer la eficiencia en inferencia.
