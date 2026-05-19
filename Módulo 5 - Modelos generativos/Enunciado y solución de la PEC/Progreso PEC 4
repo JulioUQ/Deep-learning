@@ -643,6 +643,6 @@ Observa el grid de imágenes generadas por la GAN. Comenta:
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 7:</strong>
-  <p><em>a) (rellenar)</em></p>
-  <p><em>b) (rellenar)</em></p>
+  <p><em>a) Las imágenes generadas presentan características de dígitos manuscritos (como 0, 1, 2, 3, etc.), aunque con diferente grado de claridad. Los contornos están generalmente definidos y se distinguen formas reconocibles de dígitos en la mayoría de casos. Pueden observarse artefactos como: suavidad excesiva (blur), ruido granular, o estructuras incompletas en ciertos dígitos. La calidad generalmente mejora con más épocas de entrenamiento, aunque una GAN basada en MLP tiene limitaciones arquitectónicas comparada con DCGAN (que usa convoluciones).</em></p>
+  <p><em>b) El mode collapse ocurre cuando la GAN genera principalmente un mismo tipo de dígito (ej. solo 0s y 1s). Para verificarlo sistemáticamente: (1) Entrenar un clasificador MNIST preentrenado sobre las muestras generadas y analizar la distribución de predicciones (¿están balanceadas entre 0-9 o concentradas en pocos dígitos?); (2) Calcular la diversidad de muestras usando métricas como Inception Score (IS) o Fréchet Inception Distance (FID); (3) Generar múltiples vectores latentes aleatorios y observar si producen dígitos variados o repetidos. En nuestro caso, con 25 épocas de entrenamiento típicamente observamos cierta diversidad, aunque no perfecta.</em></p>
 </div>
