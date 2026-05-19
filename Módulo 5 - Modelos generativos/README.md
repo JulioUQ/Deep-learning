@@ -1,40 +1,104 @@
-
 # Módulo 5: Modelos generativos
 
-## Información del reto
+Este módulo introduce los fundamentos de los **modelos generativos** dentro del ámbito del _Deep Learning_. A diferencia de los modelos predictivos tradicionales, cuyo objetivo principal es clasificar o predecir resultados, los modelos generativos son capaces de **crear nuevos datos** similares a los utilizados durante el entrenamiento.
 
-| Concepto   | Detalle    |
-|------------|------------|
-| **Reto** | Individual |
-| **Dedicación** | 5h |
+Actualmente, los modelos generativos representan una de las áreas más relevantes y activas de investigación en inteligencia artificial, siendo la base de tecnologías modernas como:
 
----
+- Generación de imágenes
+- Creación de texto
+- Síntesis de audio y vídeo
+- Modelos multimodales
+- Inteligencia artificial generativa
 
-## Competencias y Objetivos
-
-Los objetivos de este módulo son:
-
-- Definir una nueva clase de modelos predictivos, denominados generativos.
-- Presentar algunas de las propuestas existentes para abordar el problema de la generación de datos.
-- Introducir los fundamentos teóricos de las propuestas más empleadas para abordar el problema: las *Generative Adversarial Networks* (GANs), auto-codificadores variacionales y los modelos basados en mecanismos de difusión.
+El contenido del módulo proporciona una base teórica sólida para comprender los enfoques más importantes utilizados actualmente.
 
 ---
 
-## Enunciado de la actividad
+# Competencias y Objetivos
 
-En este módulo se introducen los modelos generativos basados en arquitecturas de aprendizaje profundo. La finalidad de estos modelos es la generación de nuevos datos que se asemejan a los de entrenamiento. Veremos distintas formas de aproximar el problema, todas ellas basadas en aprendizaje profundo, entre las que se encuentran las redes de generación adversarias, los auto-codificadores variacionales (y arquitecturas derivadas) y los modelos basados en los mecanismos de difusión.
+Los objetivos principales del módulo son:
 
-El objetivo de este módulo es presentar los conocimientos de base necesarios para introducirse en el ámbito de los modelos generativos y estar en condiciones de profundizar en estos aspectos mediante la consulta de la bibliografía especializada. Este campo de conocimiento está en profunda evolución, por ello es clave no entender los conocimientos aquí presentados como un tratado concluso, sino como una puerta desde la que acceder a un campo de conocimiento que va mucho más allá de este módulo.
+- Definir y comprender los modelos generativos como una nueva categoría de modelos predictivos.
+
+- Analizar distintas aproximaciones para la generación de datos mediante aprendizaje profundo.
+
+- Introducir los fundamentos teóricos de:
+    - _Generative Adversarial Networks_ (**GANs**)
+    - Auto-codificadores variacionales (**VAEs**)
+    - Modelos basados en difusión
+
+- Comprender las ventajas, limitaciones y aplicaciones de cada enfoque.
+
+- Adquirir la base necesaria para continuar profundizando mediante bibliografía especializada e investigación actual.
 
 ---
 
-## Contenidos y recursos
+# Contenidos del módulo
 
-### Bibliografía básica
+A lo largo del módulo se estudiarán diferentes arquitecturas y técnicas generativas, entre ellas:
+
+## GANs (_Generative Adversarial Networks_)
+
+Las GANs utilizan dos redes neuronales enfrentadas:
+
+- Un **generador**, encargado de crear datos falsos.
+- Un **discriminador**, encargado de distinguir entre datos reales y generados.
+
+Ambas redes compiten entre sí durante el entrenamiento, permitiendo generar datos cada vez más realistas.
+
+### Aplicaciones comunes
+
+- Generación de imágenes
+- Super-resolución
+- Deepfakes
+- Transferencia de estilo
+
+---
+
+## Auto-codificadores variacionales (VAE)
+
+Los VAEs permiten aprender una representación latente probabilística de los datos para posteriormente generar nuevas muestras similares.
+
+### Características principales
+
+- Aprendizaje no supervisado
+- Representación compacta de los datos
+- Generación controlada de muestras
+
+### Aplicaciones comunes
+
+- Generación de imágenes
+- Reducción de dimensionalidad
+- Compresión de datos
+
+---
+
+## Modelos basados en difusión
+
+Los modelos de difusión generan datos eliminando progresivamente ruido añadido a una muestra aleatoria.
+
+Actualmente son la base de muchos sistemas modernos de IA generativa.
+
+### Aplicaciones comunes
+
+- Generación de imágenes fotorrealistas
+- Edición de imágenes
+- Modelos tipo Stable Diffusion y DALL·E
+
+---
+
+# Conclusión
+
+El estudio de los modelos generativos constituye una de las áreas más innovadoras e importantes del Deep Learning moderno. Este módulo proporciona una introducción sólida a las arquitecturas más relevantes utilizadas actualmente y sienta las bases para continuar explorando el campo de la inteligencia artificial generativa avanzada.
+
+---
+
+# Recursos y bibliografía
+
+## Bibliografía básica
 
 - **M7 - Modelos Generativos**
+## Bibliografía accesoria
 
-### Bibliografía accesoria
-
-- [Hands-on machine learning with Scikit-learn, Keras and TensorFlow](https://discovery.biblioteca.uoc.edu/discovery/fulldisplay?context=L&vid=34CSUC_UOC:VU1&search_scope=MyInst_and_CI&isFrbr=true&tab=Everything&docid=alma991000734279006712&lang=es)
-- [DeepAI](https://d2l.ai/)
+- [Hands-on Machine Learning with Scikit-Learn, Keras and TensorFlow](https://discovery.biblioteca.uoc.edu/discovery/fulldisplay?context=L&vid=34CSUC_UOC%3AVU1&search_scope=MyInst_and_CI&isFrbr=true&tab=Everything&docid=alma991000734279006712&lang=es&utm_source=chatgpt.com)
+- [DeepAI (Dive into Deep Learning)](https://d2l.ai/?utm_source=chatgpt.com)
