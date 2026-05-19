@@ -37,6 +37,13 @@ Un concepto clave es el de **variables latentes**: representaciones de menor dim
 
 ### Teorema de Bayes
 
+El **Teorema de Bayes** sirve para **actualizar una probabilidad cuando aparece nueva información**.
+
+La idea principal es:
+
+> “Antes pensaba que algo era poco probable, pero después de ver una evidencia, ahora creo que es más (o menos) probable”.
+
+La fórmula es:
 $$P(Y|X) = \frac{P(X|Y) \cdot P(Y)}{P(X)}$$
 
 Términos clave:
@@ -58,7 +65,14 @@ Dos redes neuronales compiten entre sí:
 - **Discriminador D**: intenta distinguir instancias reales de falsas
 
 El entrenamiento es un **juego de suma cero** (min-max): $$\min_G \max_D ; \mathbb{E}_{x \sim p_r}[\log D(x)] + \mathbb{E}_{z \sim p_z}[\log(1 - D(G(z)))]$$
+Esto significa:
 
+- El **discriminador** quiere maximizar esa función:
+    - dar valores altos a imágenes reales
+    - dar valores bajos a imágenes falsas
+- El **generador** quiere minimizarla:
+    - hacer que las falsas parezcan reales
+    
 Idealmente convergen a un **equilibrio de Nash**.
 
 ### Ventajas

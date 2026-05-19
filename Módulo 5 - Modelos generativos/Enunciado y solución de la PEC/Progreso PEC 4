@@ -1,0 +1,648 @@
+## 0. Importaciones necesarias
+
+<p style="color: #00007d;">
+  <strong>Algunas consideraciones antes de iniciar con la PEC:</strong>
+</p>
+
+<ol style="color: #00007d;">
+  <li>Esta PEC está desarrollada con <strong>PyTorch</strong>. Todas las implementaciones, modelos y funciones utilizadas en el notebook están basadas en esta librería.</li>
+  <li>Al ejecutar el notebook pueden aparecer mensajes informativos relacionados con PyTorch o con la inicialización de la GPU. <strong>No son errores</strong>, sino avisos propios del entorno. <strong>Puedes ignorarlos</strong>, ya que no afectan al funcionamiento del código.</li>
+  <li>Si utilizas GPU en Kaggle, Colab u otro entorno, PyTorch la detectará automáticamente mediante <code>torch.cuda.is_available()</code>. En caso de no disponer de GPU, el notebook funcionará igualmente, aunque el entrenamiento puede requerir más tiempo.</li>
+  <li>El notebook utiliza librerías como <code>torch</code>, <code>torchvision</code> y <code>matplotlib</code>. Kaggle ya incluye todas estas librerías, por lo que <strong>no necesitas instalar nada adicional</strong>.</li>
+  <li>En la <strong>Etapa 2 (DDPM)</strong> el sampling implica un bucle iterativo de cientos de pasos, por lo que la generación de muestras puede tardar varios minutos. Esto es esperado y forma parte del comportamiento intrínseco de los modelos de difusión.</li>
+</ol>
+
+```python
+import os
+import math
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from torchvision.utils import make_grid
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Configurar dispositivo (GPU si está disponible)
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"Usando dispositivo: {device}")
+print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else "No hay GPU disponible")
+
+# Semilla para reproducibilidad
+def set_seed(seed=42):
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)
+    np.random.seed(seed)
+
+set_seed(42)
+```
+
+## 1. Definición de constantes e hiperparámetros
+
+<p>
+Trabajaremos con el conjunto de datos <strong>MNIST</strong>, que contiene imágenes de dígitos manuscritos del 0 al 9.
+</p>
+
+<ul>
+  <li>Incluye <strong>70.000 imágenes</strong>: <strong>60.000 de entrenamiento</strong> y <strong>10.000 de test</strong>.</li>
+  <li>Cada imagen es de <strong>28x28 píxeles</strong> en escala de grises (<strong>1 canal</strong>).</li>
+  <li>Las clases son los dígitos del 0 al 9 (<strong>10 categorías</strong>).</li>
+</ul>
+
+<p>
+En esta práctica trabajaremos con el conjunto de entrenamiento, ya que el objetivo es <strong>generar nuevas imágenes</strong> de dígitos a partir de un vector de ruido (en la GAN) o a partir de ruido gaussiano puro (en el DDPM). Antes de continuar, define las siguientes variables:
+</p>
+
+<ul>
+  <li><code>batch_size</code>: número de imágenes procesadas por lote durante el entrenamiento. Utilizaremos 128 muestras.</li>
+  <li><code>num_channels</code>: cantidad de canales por imagen.</li>
+  <li><code>num_classes</code>: total de categorías del dataset.</li>
+  <li><code>image_size</code>: tamaño (alto y ancho) de las imágenes.</li>
+  <li><code>image_dim</code>: número total de píxeles aplanados por imagen (útil para la GAN basada en MLP).</li>
+  <li><code>latent_dim</code>: tamaño del vector de ruido usado como entrada del generador. En este caso utilizaremos 100.</li>
+</ul>
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 1.1 [0,25 pts.]:</strong>
+<p>Completa el siguiente código con los valores correctos para MNIST:</p>
+</div>
+
+```python
+batch_size = 128                            # Tamaño del lote para entrenamiento
+num_channels = 1                            # Número de canales de las imágenes (1 para escala de grises)
+num_classes = 10                            # Número de clases en CIFAR-10
+image_size = 28                             # Tamaño de las imágenes (28x28 píxeles)
+image_dim =  image_size**2 * num_channels   # Dimensión de la imagen aplanada
+latent_dim = 100                            # Dimensión del vector latente (ruido)    
+```
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 1.2 [0,25 pts.]:</strong>
+<ul>
+  <li><code>[0,15 pts.]</code> Explica por qué MNIST utiliza un solo canal y cómo afecta esto a la arquitectura del generador.</li>
+  <li><code>[0,1 pts.]</code> Explica qué papel cumple el vector latente en una GAN y qué consecuencias tendría elegir una dimensión muy pequeña (por ejemplo, 2) o muy grande (por ejemplo, 1000).</li>
+</ul>
+</div>
+
+<!-- Bloque para respuesta del estudiante -->
+<div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.8em;">
+  <strong>Respuesta a la pregunta 1.2:</strong>
+
+  <ul>
+    <li>
+      <em>
+        MNIST utiliza un solo canal porque las imágenes están en escala de grises, es decir, no contienen información de color. Esto afecta a la arquitectura del generador de dos formas:
+      </em>
+      <ol>
+        <li><em>La capa final del generador produce 1 canal en lugar de 3 (como ocurre en imágenes RGB).</em></li>
+        <li><em>El espacio de representación es más simple: 28×28×1 = 784 dimensiones, frente a las 2.352 dimensiones de una imagen RGB.</em></li>
+      </ol>
+    </li>
+    <li>
+      <em>
+        El vector latente es la entrada estocástica que captura la variabilidad de las muestras generadas. El tamaño de este vector tiene diferentes consecuencias:
+      </em>
+      <ul>
+        <li>
+          <em>
+            <strong>Dimensión muy pequeña (ej. 2):</strong> el generador dispone de poco espacio para codificar la diversidad, por lo que las muestras generadas tienden a ser poco variadas.
+          </em>
+        </li>
+        <li>
+          <em>
+            <strong>Dimensión muy grande (ej. 1000):</strong> requiere más parámetros y capacidad computacional, lo que dificulta el aprendizaje y aumenta el riesgo de <i>overfitting</i>.
+          </em>
+        </li>
+      </ul>
+    </li>
+  </ul>
+</div>
+
+## 2. Carga del dataset y preprocesado
+
+<p>
+Cargaremos MNIST con <code>torchvision.datasets.MNIST</code> y aplicaremos las transformaciones necesarias para convertir las imágenes en tensores normalizados al rango <code>[-1, 1]</code>. Esta normalización es importante porque el generador de la GAN tendrá una activación final <code>tanh</code> (que produce salidas en <code>[-1, 1]</code>), y queremos que el discriminador reciba imágenes reales en el mismo rango que las falsas.
+</p>
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+  <strong>Pregunta 2 [0,25 pts.]:</strong> Completar el siguiente código.
+<ul>
+  <li><strong>2.1</strong> Define la transformación que convierte la imagen a tensor y la normaliza al rango <code>[-1, 1]</code>.</li>
+  <li> <strong>2.2</strong> Carga el conjunto de entrenamiento de MNIST aplicando la transformación definida.</li>
+  <li><strong>2.3</strong> Crea el <code>DataLoader</code> con el <code>batch_size</code> definido y mezclando las muestras (<code>shuffle=True</code>).</li>
+</ul>
+</div>
+
+## Normalización
+
+Explicación:
+
+* `ToTensor():` Convierte la imagen PIL a tensor de rango [0, 1]
+* `Normalize(mean=0.5, std=0.5):` Aplica la fórmula (x - 0.5) / 0.5, resultando en rango [-1, 1]
+* Esta normalización es crucial porque el generador usará activación tanh que produce salidas en [-1, 1]
+
+```python
+# 2.1 Transformaciones para normalizar al rango [-1, 1]
+transform = transforms.Compose([
+    transforms.ToTensor(),  # Convierte a tensor en rango [0, 1]
+    transforms.Normalize(mean=(0.5,), std=(0.5,))  # Normaliza a [-1, 1]
+])
+
+# 2.2 Carga del dataset de entrenamiento
+train_dataset = datasets.MNIST(
+    root='./data',          # Directorio de descarga
+    train=True,             # Conjunto de entrenamiento
+    download=True,          # Descargar si no existe
+    transform=transform     # Aplicar transformaciones
+)
+
+# 2.3 DataLoader
+train_loader = DataLoader(
+    dataset=train_dataset,
+    batch_size=batch_size,
+    shuffle=True,           # Mezclar muestras
+    pin_memory=True,
+    num_workers=2
+)
+
+print(f"Tamaño del dataset de entrenamiento: {len(train_dataset)}")
+print(f"Número de batches por época: {len(train_loader)}")
+
+# Verificación rápida del rango
+sample, _ = train_dataset[0]
+print(f"Forma de una imagen: {sample.shape}")
+print(f"Rango de valores: [{sample.min():.2f}, {sample.max():.2f}]")
+```
+
+100%|██████████| 9.91M/9.91M [00:02<00:00, 3.43MB/s]
+100%|██████████| 28.9k/28.9k [00:00<00:00, 495kB/s]
+100%|██████████| 1.65M/1.65M [00:00<00:00, 3.37MB/s]
+100%|██████████| 4.54k/4.54k [00:00<00:00, 4.36MB/s]
+Tamaño del dataset de entrenamiento: 60000
+Número de batches por época: 469
+Forma de una imagen: torch.Size([1, 28, 28])
+Rango de valores: [-1.00, 1.00]
+
+```python
+# Visualización rápida de algunas imágenes reales del dataset
+fig, axes = plt.subplots(2, 5, figsize=(10, 4))
+for i, ax in enumerate(axes.flat):
+    img, label = train_dataset[i]
+    # Des-normalizar para visualizar: (x * 0.5) + 0.5
+    img_show = img * 0.5 + 0.5
+    ax.imshow(img_show.squeeze(), cmap='gray')
+    ax.set_title(f"Etiqueta: {label}")
+    ax.axis('off')
+plt.suptitle("Muestras reales de MNIST", fontsize=14)
+plt.tight_layout()
+plt.show()
+```
+
+![Muestra reales de MNIST](C:\Users\usuario\Documents\GitHub\Deep-learning\Módulo 5 - Modelos generativos\figures\Muestra reales de MNIST.png)
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+  <strong>Pregunta 2.4 [0,25 pts.]:</strong>
+  Explica de forma razonada qué ocurriría si entrenásemos la GAN sin normalizar las imágenes al rango <code>[-1, 1]</code> (por ejemplo, dejándolas en el rango <code>[0, 1]</code> que produce <code>ToTensor()</code>) mientras el generador conserva su activación final <code>tanh</code>.
+</div>
+
+<div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+  <strong>Respuesta a la pregunta 2.4:</strong>
+  <p><em>Si entrenamos la GAN sin normalizar las imágenes al rango [-1, 1], dejándolas en [0, 1] mientras el generador mantiene tanh, el discriminador aprendería un "atajo" trivial basándose únicamente en el rango de valores (imágenes reales positivas, generadas con valores negativos de tanh), sin necesidad de aprender características visuales reales. Esto crearía un discriminador que rechaza todo simplemente detectando si los valores son negativos, proporcionando un gradiente engañoso al generador que nunca aprendería a producir dígitos realistas. Además, el generador estaría en conflicto físico con tanh (que no puede producir positivos obligatoriamente), lo que causa inestabilidad.</em></p>
+</div>
+
+
+a) Por un lado, ya que las redes asumen las entradas en rangos pequeños normalizados (0,1 o -1, 1), si las entradas tienen rango (0, 255) las activaciones internas crecerían demasiado y se produciría una explosión del gradiente. Por otro lado, al utilizarse una función tangente hiperbólica como salida del generador, con un rango (-1, 1) se daría una incompatibilidad entre el discriminador y el generador.
+
+b) Al esperar Pytorch un formato "channels-first", interpretaría que la imágen tiene 32 canáles de color, por lo que la red no podría entrenarse ya que se aplicarían los filtros convolucionales sobre ejes incorrectos.
+
+<div style="background-color: #fff8e6; border: 2px solid #ddb86b; padding: 1em; border-radius: 6px; margin-top: 1em;">
+<h2 style="color: #8a6700; margin-top: 0;">ETAPA 1 - GAN con MLP (4,5 puntos)</h2>
+<p>
+En esta primera etapa implementaremos una <strong>GAN simple</strong> donde tanto el generador como el discriminador son <strong>perceptrones multicapa (MLP)</strong>. Aunque las GAN convolucionales (DCGAN) suelen dar mejores resultados, una GAN basada en MLP es suficiente para MNIST y permite ver con claridad la mecánica del juego adversario sin la complejidad añadida de las convoluciones.
+</p>
+<p>
+La idea central es la siguiente:
+</p>
+<ul>
+  <li>El <strong>generador G</strong> recibe un vector de ruido <code>z ~ N(0, I)</code> de dimensión <code>latent_dim=100</code> y produce una imagen de 784 valores en <code>[-1, 1]</code>.</li>
+  <li>El <strong>discriminador D</strong> recibe una imagen aplanada (real o falsa) y produce un escalar en <code>[0, 1]</code> que estima la probabilidad de que la imagen sea real.</li>
+  <li>Ambas redes se entrenan en alternancia: D quiere maximizar su acierto, G quiere engañar a D.</li>
+</ul>
+</div>
+
+## 3. Implementación del Generador (MLP)
+
+<p>
+El generador es una red densamente conectada que mapea un vector latente <code>z</code> de dimensión <code>latent_dim</code> a una imagen aplanada de <code>image_dim = 784</code> valores. Usaremos una arquitectura sencilla con varias capas ocultas, activaciones <code>LeakyReLU</code> en las capas intermedias y <code>tanh</code> en la salida (para que las imágenes generadas estén en el rango <code>[-1, 1]</code>, igual que las reales).
+</p>
+
+<p>Arquitectura propuesta:</p>
+<ul>
+  <li><code>Linear(latent_dim, 256)</code> → <code>LeakyReLU(0.2)</code></li>
+  <li><code>Linear(256, 512)</code> → <code>LeakyReLU(0.2)</code></li>
+  <li><code>Linear(512, 1024)</code> → <code>LeakyReLU(0.2)</code></li>
+  <li><code>Linear(1024, image_dim)</code> → <code>Tanh()</code></li>
+</ul>
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 3.1 [0,5 pts.]:</strong> Completa la clase <code>Generator</code> siguiendo la arquitectura descrita arriba. La salida del método <code>forward</code> debe ser un tensor con forma <code>(batch_size, image_dim)</code>.
+</div>
+
+**Explicación:** El generador es un MLP que mapea un vector latente de 100 dimensiones a una imagen aplanada de 784 píxeles. Usa capas densas con `LeakyReLU` (para no perder información en negativas) y termina con `tanh` para asegurar que la salida esté en [-1, 1].
+
+```python
+class Generator(nn.Module):
+    def __init__(self, latent_dim, image_dim):
+        super().__init__()
+        # Define el bloque secuencial con las capas indicadas
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim, 256),
+            nn.LeakyReLU(0.2),
+            
+            nn.Linear(256, 512),
+            nn.LeakyReLU(0.2),
+            
+            nn.Linear(512, 1024),
+            nn.LeakyReLU(0.2),
+            
+            nn.Linear(1024, image_dim),
+            nn.Tanh()
+        )
+
+    def forward(self, z):
+        # z tiene forma (batch_size, latent_dim)
+        # debe retornar una imagen aplanada (batch_size, image_dim)
+        return self.net(z)
+
+# Test rápido de la arquitectura
+G_test = Generator(latent_dim, image_dim).to(device)
+z_test = torch.randn(4, latent_dim, device=device)
+out_test = G_test(z_test)
+print(f"Entrada (z):  {z_test.shape}")
+print(f"Salida (img): {out_test.shape}")
+print(f"Rango salida: [{out_test.min():.2f}, {out_test.max():.2f}]")
+```
+
+Entrada (z):  torch.Size([4, 100])
+Salida (img): torch.Size([4, 784])
+Rango salida: [-0.17, 0.14]
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 3.2 [0,5 pts.]:</strong>
+Explica brevemente:
+<ul>
+  <li>¿Por qué usamos <code>tanh</code> como activación final del generador y no <code>sigmoid</code> o ninguna activación?</li>
+  <li>¿Por qué usamos <code>LeakyReLU</code> en lugar de <code>ReLU</code> en las capas intermedias del generador?</li>
+</ul>
+</div>
+
+<div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+  <strong>Respuesta a la pregunta 3.2:</strong>
+  <p><em>a) Usamos tanh porque produce salidas en el rango [-1, 1], que coincide exactamente con el rango de las imágenes reales normalizadas. Si usásemos sigmoid (rango [0, 1]), habría una incongruencia entre distribuciones. Sin activación, los valores serían ilimitados y el discriminador no podría comparar directamente.</em></p>
+  <p><em>b) LeakyReLU(0.2) permite que los gradientes negativos fluyan hacia atrás (multiplicados por 0.2), evitando el problema del "dying ReLU". ReLU puro hace zero todos los valores negativos, lo que puede causar que neuronas mueran durante el entrenamiento y dejen de aprender.</em></p>
+</div>
+
+## 4. Implementación del Discriminador (MLP)
+
+<p>
+El discriminador es una red densa que recibe una imagen aplanada (<code>image_dim</code> valores en <code>[-1, 1]</code>) y produce un escalar en <code>[0, 1]</code> que estima la probabilidad de que la imagen sea real. Usaremos una arquitectura inversa a la del generador:
+</p>
+
+<ul>
+  <li><code>Linear(image_dim, 1024)</code> → <code>LeakyReLU(0.2)</code> → <code>Dropout(0.3)</code></li>
+  <li><code>Linear(1024, 512)</code> → <code>LeakyReLU(0.2)</code> → <code>Dropout(0.3)</code></li>
+  <li><code>Linear(512, 256)</code> → <code>LeakyReLU(0.2)</code></li>
+  <li><code>Linear(256, 1)</code> → <code>Sigmoid()</code></li>
+</ul>
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 4.1 [0,5 pts.]:</strong> Completa la clase <code>Discriminator</code> siguiendo la arquitectura descrita.
+</div>
+
+**Explicación:** El discriminador es un MLP que recibe una imagen aplanada de 784 píxeles y produce un escalar en [0, 1] (probabilidad de que sea real). La arquitectura es inversa a la del generador: va comprimiendo las dimensiones (1024 → 512 → 256 → 1).
+
+```python
+class Discriminator(nn.Module):
+    def __init__(self, image_dim):
+        super().__init__()
+        # Define el bloque secuencial
+        self.net = nn.Sequential(
+            nn.Linear(image_dim, 1024),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            
+            nn.Linear(1024, 512),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            
+            nn.Linear(512, 256),
+            nn.LeakyReLU(0.2),
+            
+            nn.Linear(256, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        # x tiene forma (batch_size, image_dim)
+        # debe retornar (batch_size, 1) con valores en [0, 1]
+        return self.net(x)
+
+# Test rápido
+D_test = Discriminator(image_dim).to(device)
+img_test = torch.randn(4, image_dim, device=device)
+out_D = D_test(img_test)
+print(f"Entrada D: {img_test.shape}")
+print(f"Salida D:  {out_D.shape}")
+print(f"Rango:     [{out_D.min():.3f}, {out_D.max():.3f}]")
+```
+
+Entrada D: torch.Size([4, 784])
+Salida D:  torch.Size([4, 1])
+Rango:     [0.483, 0.506]
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 4.2 [0,5 pts.]:</strong>
+¿Por qué incluimos <code>Dropout</code> en el discriminador y no en el generador? ¿Qué papel cumple aquí?
+</div>
+
+<div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+  <strong>Respuesta a la pregunta 4.2:</strong>
+  <p><em>Incluimos Dropout(0.3) en las primeras capas del discriminador como regularización para evitar overfitting y mejorar la estabilidad del entrenamiento adversarial. El discriminador tiende a ser muy poderoso y puede aprender a explotar atajos (como rangos de valores), por lo que dropout lo fuerza a aprender características más robustas. No incluimos dropout en el generador porque queremos que sea lo más determinista posible en su generación, y dropout añadiría ruido innecesario.
+  </em></p>
+</div>
+
+## 5. Funciones de pérdida y optimizadores
+
+<p>
+Para entrenar la GAN usamos la <strong>función de pérdida BCE (Binary Cross-Entropy)</strong>, que mide qué tan bien el discriminador clasifica entre reales (etiqueta 1) y falsas (etiqueta 0).
+</p>
+
+<p>
+A diferencia de un problema supervisado clásico, aquí necesitamos <strong>dos optimizadores separados</strong>: uno para los parámetros del generador y otro para los del discriminador. La razón es que cada red tiene un objetivo distinto y se actualiza con su propia pérdida.
+</p>
+
+<p>
+Usaremos el optimizador <strong>Adam</strong> con <code>lr=2e-4</code> y <code>betas=(0.5, 0.999)</code>, que son los hiperparámetros recomendados en el paper original de DCGAN.
+</p>
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 5.1 [0,5 pts.]:</strong> Completa el código siguiente:
+<ul>
+  <li><strong>5.1.a</strong> Instancia el generador y el discriminador y envíalos al <code>device</code>.</li>
+  <li><strong>5.1.b</strong> Define la función de pérdida <code>BCELoss</code>.</li>
+  <li><strong>5.1.c</strong> Define los dos optimizadores Adam, uno para G y otro para D, con los hiperparámetros indicados.</li>
+</ul>
+</div>
+
+**Explicación:**
+
+* BCELoss: Binary Cross-Entropy es apropiado porque el discriminador realiza una clasificación binaria (real/falso)
+* Adam con lr=2e-4 y betas=(0.5, 0.999): Estos son los hiperparámetros recomendados en el paper DCGAN. El learning rate bajo (2e-4) asegura estabilidad, y los betas promueven convergencia lenta y controlada
+
+```python
+# 5.1.a Instanciar las redes
+G = Generator(latent_dim, image_dim).to(device)
+D = Discriminator(image_dim).to(device)
+
+# 5.1.b Pérdida
+criterion = nn.BCELoss()
+
+# 5.1.c Optimizadores
+lr = 2e-4
+betas = (0.5, 0.999)
+
+opt_G = optim.Adam(G.parameters(), lr=lr, betas=betas)
+opt_D = optim.Adam(D.parameters(), lr=lr, betas=betas)
+
+print("Generador:")
+print(G)
+print("\nDiscriminador:")
+print(D)
+
+# Contar parámetros
+n_params_G = sum(p.numel() for p in G.parameters())
+n_params_D = sum(p.numel() for p in D.parameters())
+print(f"\nParámetros del generador:    {n_params_G:,}")
+print(f"Parámetros del discriminador: {n_params_D:,}")
+```
+
+Generador:
+Generator(
+  (net): Sequential(
+    (0): Linear(in_features=100, out_features=256, bias=True)
+    (1): LeakyReLU(negative_slope=0.2)
+    (2): Linear(in_features=256, out_features=512, bias=True)
+    (3): LeakyReLU(negative_slope=0.2)
+    (4): Linear(in_features=512, out_features=1024, bias=True)
+    (5): LeakyReLU(negative_slope=0.2)
+    (6): Linear(in_features=1024, out_features=784, bias=True)
+    (7): Tanh()
+  )
+)
+
+Discriminador:
+Discriminator(
+  (net): Sequential(
+    (0): Linear(in_features=784, out_features=1024, bias=True)
+    (1): LeakyReLU(negative_slope=0.2)
+    (2): Dropout(p=0.3, inplace=False)
+    (3): Linear(in_features=1024, out_features=512, bias=True)
+    (4): LeakyReLU(negative_slope=0.2)
+    (5): Dropout(p=0.3, inplace=False)
+    (6): Linear(in_features=512, out_features=256, bias=True)
+    (7): LeakyReLU(negative_slope=0.2)
+    (8): Linear(in_features=256, out_features=1, bias=True)
+    (9): Sigmoid()
+  )
+)
+
+Parámetros del generador:    1,486,352
+Parámetros del discriminador: 1,460,225
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 5.2 [0,25 pts.]:</strong>
+¿Por qué definimos dos optimizadores separados (uno para G y otro para D) y no uno solo que actualice todos los parámetros a la vez? ¿Qué problema tendríamos con un único optimizador?
+</div>
+
+<div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+  <strong>Respuesta a la pregunta 5.2:</strong>
+  <p><em>Necesitamos dos optimizadores separados porque el generador y el discriminador tienen objetivos opuestos: el discriminador quiere maximizar su acierto (minimizar su pérdida), mientras que el generador quiere engañar al discriminador (minimizar una pérdida diferente). Si usásemos un único optimizador, los gradientes de ambas redes se mezclarían, causando actualizaciones conflictivas que pueden llevar a divergencia del entrenamiento o a un equilibrio incorrecto. Cada optimizador actualiza solo los parámetros de su red, permitiendo que ambas evolucionen según su propia dinámica adversarial.</em></p>
+</div>
+
+## 6. Bucle de entrenamiento de la GAN
+
+<p>
+El bucle de entrenamiento de una GAN tiene la siguiente estructura para cada batch de imágenes reales:
+</p>
+
+<ol>
+  <li><strong>Paso del discriminador</strong>:
+    <ul>
+      <li>Calcular la salida de D sobre las imágenes reales y la pérdida BCE con etiqueta 1.</li>
+      <li>Generar imágenes falsas con G a partir de ruido <code>z</code> y calcular la salida de D sobre ellas (con <code>.detach()</code>) y la pérdida BCE con etiqueta 0.</li>
+      <li>Sumar ambas pérdidas, hacer backward y <code>opt_D.step()</code>.</li>
+    </ul>
+  </li>
+  <li><strong>Paso del generador</strong>:
+    <ul>
+      <li>Generar nuevas imágenes falsas con G y pasarlas por D (sin <code>detach()</code>).</li>
+      <li>Calcular la pérdida BCE con etiqueta <strong>1</strong> (queremos que D crea que son reales).</li>
+      <li>Backward y <code>opt_G.step()</code>.</li>
+    </ul>
+  </li>
+</ol>
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 6.1 [1,0 pts.]:</strong> Completa el bucle de entrenamiento de la GAN. Observa que ya están preparadas las variables auxiliares (etiquetas reales/falsas) y el reshape de las imágenes. Solo debes completar las líneas marcadas con <code># TODO</code>.
+</div>
+
+**Explicación del flujo:**
+
+* Paso del discriminador: Entrena D a distinguir reales (etiqueta 1) de falsas (etiqueta 0). Usa .detach() en fake_imgs para evitar actualizar G
+* Paso del generador: Entrena G a engañar a D. Usa imágenes falsas SIN .detach() para que los gradientes fluyan hasta G
+
+
+```python
+def train_gan(G, D, train_loader, opt_G, opt_D, criterion, n_epochs, latent_dim, device):
+    G.train()
+    D.train()
+    history = {'loss_D': [], 'loss_G': []}
+
+    for epoch in range(n_epochs):
+        loss_D_epoch = 0.0
+        loss_G_epoch = 0.0
+
+        for batch_idx, (real_imgs, _) in enumerate(train_loader):
+            bs = real_imgs.size(0)
+            real_imgs = real_imgs.view(bs, -1).to(device)  # aplanar (bs, 784)
+
+            # Etiquetas
+            real_labels = torch.ones(bs, 1, device=device)
+            fake_labels = torch.zeros(bs, 1, device=device)
+
+            # ---------- 6.1.a Paso del discriminador ----------
+            opt_D.zero_grad()
+
+            # Salida de D sobre imágenes reales y su pérdida BCE
+            d_real = D(real_imgs)
+            loss_real = criterion(d_real, real_labels)
+
+            # Generar imágenes falsas con z ~ N(0, I)
+            z = torch.randn(bs, latent_dim, device=device)
+            fake_imgs = G(z)
+
+            # Salida de D sobre falsas (usar .detach()!) y su pérdida BCE
+            d_fake = D(fake_imgs.detach())
+            loss_fake = criterion(d_fake, fake_labels)
+
+            loss_D = loss_real + loss_fake
+            loss_D.backward()
+            opt_D.step()
+
+            # ---------- 6.1.b Paso del generador ----------
+            opt_G.zero_grad()
+
+            # Pasar las imágenes falsas por D (sin detach!) y calcular la pérdida
+            # con etiqueta REAL (queremos engañar a D)
+            d_fake_for_G = D(fake_imgs)
+            loss_G = criterion(d_fake_for_G, real_labels)
+
+            loss_G.backward()
+            opt_G.step()
+
+            loss_D_epoch += loss_D.item()
+            loss_G_epoch += loss_G.item()
+
+        loss_D_epoch /= len(train_loader)
+        loss_G_epoch /= len(train_loader)
+        history['loss_D'].append(loss_D_epoch)
+        history['loss_G'].append(loss_G_epoch)
+
+        print(f"Época {epoch+1}/{n_epochs} | loss_D = {loss_D_epoch:.4f} | loss_G = {loss_G_epoch:.4f}")
+
+    return history
+
+# Entrenamiento de la GAN
+N_EPOCHS_GAN = 25  # Aprox. 3-5 minutos en GPU, 20-30 minutos en CPU
+
+set_seed(42)
+G = Generator(latent_dim, image_dim).to(device)
+D = Discriminator(image_dim).to(device)
+opt_G = optim.Adam(G.parameters(), lr=lr, betas=betas)
+opt_D = optim.Adam(D.parameters(), lr=lr, betas=betas)
+
+history_gan = train_gan(G, D, train_loader, opt_G, opt_D, criterion, N_EPOCHS_GAN, latent_dim, device)
+```
+
+
+```python
+# Curvas de pérdida
+plt.figure(figsize=(8, 4))
+plt.plot(history_gan['loss_D'], label='Loss D', color='tab:blue')
+plt.plot(history_gan['loss_G'], label='Loss G', color='tab:orange')
+plt.xlabel('Época')
+plt.ylabel('Pérdida (BCE)')
+plt.title('Curvas de pérdida de la GAN')
+plt.legend()
+plt.grid(True, alpha=0.3)
+plt.show()
+```
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 6.2 [0,25 pts.]:</strong>
+¿Por qué es necesario llamar a <code>.detach()</code> sobre las imágenes falsas cuando se calcula la pérdida del discriminador? ¿Qué pasaría si lo olvidásemos?
+</div>
+
+<div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+  <strong>Respuesta a la pregunta 6.2:</strong>
+  <p><em>El .detach() asegura que cada red solo se actualiza en su propio paso, manteniendo la dinámica adversarial correcta. .detach() desconecta el grafo de computación, evitando que los gradientes de la pérdida del discriminador fluyan hacia atrás al generador. Si lo olvidásemos, durante el paso del discriminador estaríamos inadvertidamente actualizando también los parámetros de G (a través de los gradientes de D), causando conflictos. G se actualizaría tanto en su propio paso como en el paso de D, resultando en inestabilidad total. </em></p>
+</div>
+
+## 7. Generación de muestras con la GAN entrenada
+
+<p>
+Una vez entrenada la GAN, podemos generar nuevas imágenes simplemente sampleando vectores latentes <code>z</code> de una normal estándar y pasándolos por el generador. Recordamos que las imágenes salen en <code>[-1, 1]</code>, por lo que para visualizarlas debemos des-normalizarlas a <code>[0, 1]</code>.
+</p>
+
+```python
+def generar_muestras_gan(G, n_samples, latent_dim, device):
+    G.eval()
+    with torch.no_grad():
+        z = torch.randn(n_samples, latent_dim, device=device)
+        fake_imgs = G(z)
+        # Reshape a (n, 1, 28, 28) y des-normalizar
+        fake_imgs = fake_imgs.view(n_samples, 1, image_size, image_size)
+        fake_imgs = fake_imgs * 0.5 + 0.5  # de [-1,1] a [0,1]
+    return fake_imgs
+
+
+def mostrar_grid(imgs, nrow=8, title=""):
+    grid = make_grid(imgs.cpu(), nrow=nrow, padding=2)
+    plt.figure(figsize=(nrow, imgs.size(0) // nrow))
+    plt.imshow(grid.permute(1, 2, 0).numpy(), cmap='gray')
+    plt.title(title)
+    plt.axis('off')
+    plt.show()
+
+
+# Generar 64 muestras de la GAN
+muestras_gan = generar_muestras_gan(G, n_samples=64, latent_dim=latent_dim, device=device)
+mostrar_grid(muestras_gan, nrow=8, title="Muestras generadas por la GAN (MLP)")
+```
+
+<div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
+<strong>Pregunta 7 [0,5 pts.]:</strong>
+Observa el grid de imágenes generadas por la GAN. Comenta:
+<ul>
+  <li><code>[0,25 pts.]</code> ¿Qué calidad visual presentan? ¿Se distinguen los dígitos? ¿Hay artefactos como ruido, blur o estructuras irregulares?</li>
+  <li><code>[0,25 pts.]</code> ¿Observas algún caso de <em>mode collapse</em> (varios <code>z</code> distintos producen el mismo dígito)? ¿Cómo lo verificarías de forma sistemática?</li>
+</ul>
+</div>
+
+<div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+  <strong>Respuesta a la pregunta 7:</strong>
+  <p><em>a) (rellenar)</em></p>
+  <p><em>b) (rellenar)</em></p>
+</div>
