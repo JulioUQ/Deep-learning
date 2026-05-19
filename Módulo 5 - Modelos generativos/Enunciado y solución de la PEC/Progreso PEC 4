@@ -575,7 +575,31 @@ opt_D = optim.Adam(D.parameters(), lr=lr, betas=betas)
 
 history_gan = train_gan(G, D, train_loader, opt_G, opt_D, criterion, N_EPOCHS_GAN, latent_dim, device)
 ```
-
+Época 1/25 | loss_D = 0.8039 | loss_G = 1.9615
+Época 2/25 | loss_D = 0.5137 | loss_G = 3.5043
+Época 3/25 | loss_D = 0.5851 | loss_G = 2.9235
+Época 4/25 | loss_D = 0.4095 | loss_G = 3.1753
+Época 5/25 | loss_D = 0.3740 | loss_G = 3.1249
+Época 6/25 | loss_D = 0.3851 | loss_G = 2.8207
+Época 7/25 | loss_D = 0.4830 | loss_G = 2.5436
+Época 8/25 | loss_D = 0.5757 | loss_G = 2.3240
+Época 9/25 | loss_D = 0.5894 | loss_G = 2.2555
+Época 10/25 | loss_D = 0.7089 | loss_G = 1.9713
+Época 11/25 | loss_D = 0.7844 | loss_G = 1.8308
+Época 12/25 | loss_D = 0.8338 | loss_G = 1.6889
+Época 13/25 | loss_D = 0.8924 | loss_G = 1.5765
+Época 14/25 | loss_D = 0.9175 | loss_G = 1.5223
+Época 15/25 | loss_D = 0.9230 | loss_G = 1.4934
+Época 16/25 | loss_D = 0.9418 | loss_G = 1.4947
+Época 17/25 | loss_D = 0.9636 | loss_G = 1.4269
+Época 18/25 | loss_D = 0.9976 | loss_G = 1.3812
+Época 19/25 | loss_D = 1.0010 | loss_G = 1.3816
+Época 20/25 | loss_D = 1.0179 | loss_G = 1.3473
+Época 21/25 | loss_D = 1.0201 | loss_G = 1.3406
+Época 22/25 | loss_D = 1.0418 | loss_G = 1.3109
+Época 23/25 | loss_D = 1.0475 | loss_G = 1.3022
+Época 24/25 | loss_D = 1.0413 | loss_G = 1.3075
+Época 25/25 | loss_D = 1.0494 | loss_G = 1.2827
 
 ```python
 # Curvas de pérdida
@@ -589,6 +613,8 @@ plt.legend()
 plt.grid(True, alpha=0.3)
 plt.show()
 ```
+
+![Curva de perdida de la GAN](C:\Users\usuario\Documents\GitHub\Deep-learning\Módulo 5 - Modelos generativos\figures\Curva de perdida de la GAN.png)
 
 <div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
 <strong>Pregunta 6.2 [0,25 pts.]:</strong>
@@ -631,6 +657,8 @@ def mostrar_grid(imgs, nrow=8, title=""):
 muestras_gan = generar_muestras_gan(G, n_samples=64, latent_dim=latent_dim, device=device)
 mostrar_grid(muestras_gan, nrow=8, title="Muestras generadas por la GAN (MLP)")
 ```
+
+![Muestras generadas por la GAN (MLP)](C:\Users\usuario\Documents\GitHub\Deep-learning\Módulo 5 - Modelos generativos\figures\Muestras generadas por la GAN (MLP).png)
 
 <div style="background-color: #EDF7FF; border-left: 5px solid #7C9DBF; padding: 0.5em;">
 <strong>Pregunta 7 [0,5 pts.]:</strong>
