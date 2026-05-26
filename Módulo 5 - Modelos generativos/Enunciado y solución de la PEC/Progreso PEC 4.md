@@ -80,43 +80,23 @@ image_size = 28                             # Tamaño de las imágenes (28x28 p�
 image_dim =  image_size**2 * num_channels   # Dimensión de la imagen aplanada
 latent_dim = 100                            # Dimensión del vector latente (ruido)    
 ```
-<!-- Bloque para respuesta del estudiante -->
+
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.8em;">
   <strong>Respuesta a la pregunta 1.2:</strong>
 
   <ul>
     <li>
       <em>
-        `num_channels`: MNIST utiliza un solo canal porque las imágenes están en escala de grises, es decir, no contienen información de color. Esto afecta a la arquitectura del generador de dos formas:
+        <strong>num_channels = 1:</strong> MNIST contiene imágenes en escala de grises, es decir cada imagen tiene un único canal de color. Esto implica que la capa de salida del generador produce tensores de forma (B, 1, 28, 28), con tan solo 784 valores por imagen, frente a las 2.352 dimensiones de una imagen RGB de igual resolución.
       </em>
-      <ol>
-        <li><em>La capa final del generador produce 1 canal en lugar de 3 (como ocurre en imágenes RGB).</em></li>
-        <li><em>El espacio de representación es más simple: 28×28×1 = 784 dimensiones, frente a las 2.352 dimensiones de una imagen RGB.</em></li>
-      </ol>
     </li>
     <li>
       <em>
-        `latent_dim`: El vector latente es la entrada estocástica que captura la variabilidad de las muestras generadas. El tamaño de este vector tiene diferentes consecuencias:
+        <strong>latent_dim = 100:</strong> El vector latente es la entrada estocástica que controla la variabilidad de las imágenes generadas. Un espacio latente demasiado pequeño (p.ej. 2) limita la diversidad de salida, mientras que uno demasiado grande (p.ej. 1000) incrementa el coste computacional y dificulta el aprendizaje sin aportar beneficio real en un dataset tan sencillo como MNIST. 
       </em>
-      <ul>
-        <li>
-          <em>
-            <strong>Dimensión muy pequeña (ej. 2):</strong> el generador dispone de poco espacio para codificar la diversidad, por lo que las muestras generadas tienden a ser poco variadas.
-          </em>
-        </li>
-        <li>
-          <em>
-            <strong>Dimensión muy grande (ej. 1000):</strong> requiere más parámetros y capacidad computacional, lo que dificulta el aprendizaje y aumenta el riesgo de <i>overfitting</i>.
-          </em>
-        </li>
-      </ul>
     </li>
   </ul>
 </div>
-
-num_channels: CIFAR-10 utiliza 3 canales ya que son imágenes a color, cada canal corresponde a cada uno de los colores de RGB (rojo, verde y azul), por lo que la forma de los tensores será 32x32x3. Esto implica que el generador producirá imágenes con 3 mapas de características (uno por cada canal de color) y el discriminador debe aceptar imágenes con 3 canales de entrada, lo que aumenta su complejidad, como se describe en el apartado "Modelos generativos basados en redes antagónicas o adversarías de los recursos de aprendizaje.
-
-latent_dim: El vector latente es una representación compacta del espacio de variaciones posibles de las imágenes generadas. Para elegir su dimensión se debe considerar que a mayor dimensión, habrá mayor diversidad en las imágenes generadas. Además, a mayor tamaño del vector, mayor coste computacional del entrenamiento del modelo (cp. 5 Modelos generativos basados en autocodificadores variacionales - VAEs, Modelos Generativos.).
 
 ## 2. Carga del dataset y preprocesado
 
@@ -209,19 +189,16 @@ plt.show()
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 2.4:</strong>
-  <p><em>Si entrenamos la GAN sin normalizar las imágenes al rango [-1, 1], dejándolas en [0, 1] mientras el generador mantiene tanh, el discriminador aprendería un "atajo" trivial basándose únicamente en el rango de valores (imágenes reales positivas, generadas con valores negativos de tanh), sin necesidad de aprender características visuales reales. Esto crearía un discriminador que rechaza todo simplemente detectando si los valores son negativos, proporcionando un gradiente engañoso al generador que nunca aprendería a producir dígitos realistas. Además, el generador estaría en conflicto físico con tanh (que no puede producir positivos obligatoriamente), lo que causa inestabilidad.</em></p>
+  <p><em>Si las imágenes reales se dejan en [0, 1] mientras el generador produce salidas en [-1, 1] mediante tanh, se produce una incompatibilidad entre datos reales y generados. El discriminador puede aprender a distinguirlos trivialmente fijándose solo en el signo de los valores (los reales siempre positivos, los generados potencialmente negativos), sin necesidad de aprender ninguna característica visual. De modo que, el discriminador rechazaría las falsas por rango, no por contenido. Como resultado, el generador nunca aprendería a producir dígitos realistas y el entrenamiento no convergería a representaciones útiles.
+  </em></p>
 </div>
-
-
-a) Por un lado, ya que las redes asumen las entradas en rangos pequeños normalizados (0,1 o -1, 1), si las entradas tienen rango (0, 255) las activaciones internas crecerían demasiado y se produciría una explosión del gradiente. Por otro lado, al utilizarse una función tangente hiperbólica como salida del generador, con un rango (-1, 1) se daría una incompatibilidad entre el discriminador y el generador.
-
-b) Al esperar Pytorch un formato "channels-first", interpretaría que la imágen tiene 32 canáles de color, por lo que la red no podría entrenarse ya que se aplicarían los filtros convolucionales sobre ejes incorrectos.
 
 <div style="background-color: #fff8e6; border: 2px solid #ddb86b; padding: 1em; border-radius: 6px; margin-top: 1em;">
 <h2 style="color: #8a6700; margin-top: 0;">ETAPA 1 - GAN con MLP (4,5 puntos)</h2>
 <p>
 En esta primera etapa implementaremos una <strong>GAN simple</strong> donde tanto el generador como el discriminador son <strong>perceptrones multicapa (MLP)</strong>. Aunque las GAN convolucionales (DCGAN) suelen dar mejores resultados, una GAN basada en MLP es suficiente para MNIST y permite ver con claridad la mecánica del juego adversario sin la complejidad añadida de las convoluciones.
 </p>
+
 <p>
 La idea central es la siguiente:
 </p>
@@ -258,15 +235,19 @@ class Generator(nn.Module):
         super().__init__()
         # Define el bloque secuencial con las capas indicadas
         self.net = nn.Sequential(
+            # Capa 1: Latent_dim -> 256
             nn.Linear(latent_dim, 256),
             nn.LeakyReLU(0.2),
             
+            # Capa 2: 256 -> 512
             nn.Linear(256, 512),
             nn.LeakyReLU(0.2),
             
+            # Capa 3: 512 -> 1024
             nn.Linear(512, 1024),
             nn.LeakyReLU(0.2),
             
+            # Capa 4: 1024 -> image_dim
             nn.Linear(1024, image_dim),
             nn.Tanh()
         )
@@ -300,8 +281,18 @@ Explica brevemente:
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 3.2:</strong>
-  <p><em>a) Usamos tanh porque produce salidas en el rango [-1, 1], que coincide exactamente con el rango de las imágenes reales normalizadas. Si usásemos sigmoid (rango [0, 1]), habría una incongruencia entre distribuciones. Sin activación, los valores serían ilimitados y el discriminador no podría comparar directamente.</em></p>
-  <p><em>b) LeakyReLU(0.2) permite que los gradientes negativos fluyan hacia atrás (multiplicados por 0.2), evitando el problema del "dying ReLU". ReLU puro hace zero todos los valores negativos, lo que puede causar que neuronas mueran durante el entrenamiento y dejen de aprender.</em></p>
+  <ul>
+    <li>
+      <em>
+        <strong>tanh en la capa final:</strong> tanh produce salidas en [-1, 1], que coincide exactamente con el rango de las imágenes reales normalizadas. sigmoid generaría salidas en [0, 1], creando la incompatibilidad de distribución descrita en la pregunta 2.4. Sin activación, los valores serían ilimitados y el discriminador no podría comparar reales y generados en el mismo espacio.
+      </em>
+    </li>
+    <li>
+      <em>
+        <strong>LeakyReLU en capas intermedias:</strong> ReLU anula todos los valores negativos, lo que puede provocar que muchas neuronas dejen de activarse durante el entrenamiento (dying ReLU), reduciendo la capacidad expresiva del generador. LeakyReLU(0.2) permite un flujo de gradiente reducido (×0.2) para activaciones negativas, evitando este problema y asegurando que todas las neuronas puedan seguir aprendiendo.
+      </em>
+    </li>
+  </ul>
 </div>
 
 ## 4. Implementación del Discriminador (MLP)
@@ -329,17 +320,22 @@ class Discriminator(nn.Module):
         super().__init__()
         # Define el bloque secuencial
         self.net = nn.Sequential(
+
+        # Capa 1: image_dim -> 1024
             nn.Linear(image_dim, 1024),
             nn.LeakyReLU(0.2),
             nn.Dropout(0.3),
-            
+        
+        # Capa 2: 1024 -> 512    
             nn.Linear(1024, 512),
             nn.LeakyReLU(0.2),
             nn.Dropout(0.3),
             
+        #  Capa 3: 512 -> 256   
             nn.Linear(512, 256),
             nn.LeakyReLU(0.2),
-            
+
+        # Capa 4: 256 -> 1 
             nn.Linear(256, 1),
             nn.Sigmoid()
         )
@@ -369,9 +365,13 @@ Rango:     [0.483, 0.506]
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 4.2:</strong>
-  <p><em>Incluimos Dropout(0.3) en las primeras capas del discriminador como regularización para evitar overfitting y mejorar la estabilidad del entrenamiento adversarial. El discriminador tiende a ser muy poderoso y puede aprender a explotar atajos (como rangos de valores), por lo que dropout lo fuerza a aprender características más robustas. No incluimos dropout en el generador porque queremos que sea lo más determinista posible en su generación, y dropout añadiría ruido innecesario.
+  <p><em>El Dropout(0.3) en las primeras capas del discriminador actúa como regularizador para evitar el desequilibrio adversarial. Si el discriminador aprende demasiado deprisa respecto al generador, distingue reales de falsas y proporciona gradientes casi nulos, impidiendo su aprendizaje. Al forzar al discriminador a aprender características más robustas y no explotar atajos, se mantiene el equilibrio del juego minimax.</p></em>
+
+  <p><em>
+  No se incluye Dropout en el generador porque su objetivo es producir imágenes con la mayor coherencia posible. Introducir ruido estocástico mediante Dropout añadiría varianza innecesaria a las salidas generadas y perjudicaría la calidad visual sin aportar ventaja alguna al proceso adversarial.
   </em></p>
 </div>
+
 
 ## 5. Funciones de pérdida y optimizadores
 
@@ -468,7 +468,8 @@ Parámetros del discriminador: 1,460,225
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 5.2:</strong>
-  <p><em>Necesitamos dos optimizadores separados porque el generador y el discriminador tienen objetivos opuestos: el discriminador quiere maximizar su acierto (minimizar su pérdida), mientras que el generador quiere engañar al discriminador (minimizar una pérdida diferente). Si usásemos un único optimizador, los gradientes de ambas redes se mezclarían, causando actualizaciones conflictivas que pueden llevar a divergencia del entrenamiento o a un equilibrio incorrecto. Cada optimizador actualiza solo los parámetros de su red, permitiendo que ambas evolucionen según su propia dinámica adversarial.</em></p>
+    <p><em>El generador y el discriminador tienen objetivos opuestos y se actualizan con pérdidas distintas en pasos alternos. Un único optimizador mezclaría gradientes de ambas redes. Los de D intentan mejorar la discriminación mientras que los de G intentan empeorarla, produciéndose cancelaciones o actualizaciones incoherentes que desequilibrian el juego minimax. Con dos optimizadores independientes, cada red se actualiza únicamente con su propia pérdida y únicamente sobre sus propios parámetros, manteniendo la dinámica adversarial correcta.
+    </em></p>
 </div>
 
 ## 6. Bucle de entrenamiento de la GAN
@@ -533,10 +534,11 @@ def train_gan(G, D, train_loader, opt_G, opt_D, criterion, n_epochs, latent_dim,
             z = torch.randn(bs, latent_dim, device=device)
             fake_imgs = G(z)
 
-            # Salida de D sobre falsas (usar .detach()!) y su pérdida BCE
+            # Salida de D sobre falsas (con .detach()) y su pérdida BCE
             d_fake = D(fake_imgs.detach())
             loss_fake = criterion(d_fake, fake_labels)
 
+            # Pérdida total de D
             loss_D = loss_real + loss_fake
             loss_D.backward()
             opt_D.step()
@@ -544,7 +546,7 @@ def train_gan(G, D, train_loader, opt_G, opt_D, criterion, n_epochs, latent_dim,
             # ---------- 6.1.b Paso del generador ----------
             opt_G.zero_grad()
 
-            # Pasar las imágenes falsas por D (sin detach!) y calcular la pérdida
+            # Pasar las imágenes falsas por D (sin detach()) y calcular la pérdida BCE
             # con etiqueta REAL (queremos engañar a D)
             d_fake_for_G = D(fake_imgs)
             loss_G = criterion(d_fake_for_G, real_labels)
@@ -623,7 +625,7 @@ plt.show()
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 6.2:</strong>
-  <p><em>El .detach() asegura que cada red solo se actualiza en su propio paso, manteniendo la dinámica adversarial correcta. .detach() desconecta el grafo de computación, evitando que los gradientes de la pérdida del discriminador fluyan hacia atrás al generador. Si lo olvidásemos, durante el paso del discriminador estaríamos inadvertidamente actualizando también los parámetros de G (a través de los gradientes de D), causando conflictos. G se actualizaría tanto en su propio paso como en el paso de D, resultando en inestabilidad total. </em></p>
+    <p><em><strong>.detach()</strong> desconecta el grafo computacional de las imágenes falsas al calcular la pérdida del discriminador, impidiendo que los gradientes de esa pérdida se propaguen hacia el generador. Si se omitiera, durante el paso de D, PyTorch acumularía gradientes también en los parámetros de G, actualizándolo con el objetivo equivocado. G se actualizaría dos veces por iteración (una en su propio paso y otra en el de D), rompiendo la alternancia del entrenamiento adversarial y generando inestabilidad severa o divergencia. </em></p>
 </div>
 
 ## 7. Generación de muestras con la GAN entrenada
@@ -671,8 +673,18 @@ Observa el grid de imágenes generadas por la GAN. Comenta:
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 7:</strong>
-  <p><em>a) Las imágenes generadas presentan características de dígitos manuscritos (como 0, 1, 2, 3, etc.), aunque con diferente grado de claridad. Los contornos están generalmente definidos y se distinguen formas reconocibles de dígitos en la mayoría de casos. Pueden observarse artefactos como: suavidad excesiva (blur), ruido granular, o estructuras incompletas en ciertos dígitos. La calidad generalmente mejora con más épocas de entrenamiento, aunque una GAN basada en MLP tiene limitaciones arquitectónicas comparada con DCGAN (que usa convoluciones).</em></p>
-  <p><em>b) El mode collapse ocurre cuando la GAN genera principalmente un mismo tipo de dígito (ej. solo 0s y 1s). Para verificarlo sistemáticamente: (1) Entrenar un clasificador MNIST preentrenado sobre las muestras generadas y analizar la distribución de predicciones (¿están balanceadas entre 0-9 o concentradas en pocos dígitos?); (2) Calcular la diversidad de muestras usando métricas como Inception Score (IS) o Fréchet Inception Distance (FID); (3) Generar múltiples vectores latentes aleatorios y observar si producen dígitos variados o repetidos. En nuestro caso, con 25 épocas de entrenamiento típicamente observamos cierta diversidad, aunque no perfecta.</em></p>
+  <ul>
+    <li>
+      <em>
+        <strong>Calidad visual:</strong> Las imágenes generadas por la GAN-MLP son en su mayoría reconocibles como dígitos MNIST. Se distinguen claramente representantes de varios dígitos (0, 1, 4, 7, 9…) con contornos definidos. Sin embargo, son visibles los artefactos propios de una arquitectura MLP sin convoluciones como: bordes algo difusos, ruido granular leve y trazos incompletos en algunos casos.
+      </em>
+    </li>
+    <li>
+      <em>
+        <strong>Mode collapse:</strong> No se observa un mode collapse severo en el grid, evidenciandose representantes de distintos dígitos sin concentración excesiva en ninguno. Para verificarlo de forma sistemática se podría: 1) pasar las muestras por un clasificador MNIST preentrenado y comprobar que la distribución de predicciones sea aproximadamente uniforme sobre los 10 dígitos, o 2) calcular la entropía de esa distribución (baja entropía = colapso).
+      </em>
+    </li>
+  </ul>
 </div>
 
 
@@ -833,21 +845,12 @@ Mirando la visualización anterior, explica con tus palabras:
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 8.3:</strong>
-  <p><em>El forward process es una cadena de Markov gaussiana que corrompe progresivamente la imagen real x0x_0
-x0​ añadiendo ruido en cada paso. A tt
-t pequeño la imagen sigue siendo reconocible; a tt
-t grande (t ≈ T) la imagen es indistinguible de ruido blanco gaussiano puro. Visualmente, las primeras columnas de la figura muestran el dígito nítido, mientras que las últimas son estática uniforme.</em></p>
-  <p><em>Porque αˉT−1≈0\bar\alpha_{T-1} \approx 0
-αˉT−1​≈0 implica que αˉT−1≈0\sqrt{\bar\alpha_{T-1}} \approx 0
-αˉT−1​​≈0 y 1−αˉT−1≈1\sqrt{1-\bar\alpha_{T-1}} \approx 1
-1−αˉT−1​​≈1. En ese límite, xT=αˉT x0+1−αˉT ϵ≈ϵx_T = \sqrt{\bar\alpha_T}\,x_0 + \sqrt{1-\bar\alpha_T}\,\epsilon \approx \epsilon
-xT​=αˉT​​x0​+1−αˉT​​ϵ≈ϵ, es decir, la distribución de xTx_T
-xT​ es prácticamente N(0,I)\mathcal{N}(0, I)
-N(0,I) independientemente del contenido de x0x_0
-x0​. Esto es esencial: el punto de partida del sampling (reverse process) debe ser ruido puro, y solo lo es si el forward process ha destruido completamente la información original. Si αˉT−1\bar\alpha_{T-1}
-αˉT−1​ fuera mayor que 0, el sampling comenzaría desde una distribución que no es pura Gaussiana y el proceso generativo estaría mal condicionado.</em></p>
-
+    <p><em>El forward process es la destrucción progresiva de la imagen original mediante la adición incremental de ruido gaussiano. Como se observa en la imagen superior, el dígito "5" es nítido en t=0, degradado pero reconocible en t=100, y completamente irreconocible para t≥500.
+    </em></p>
+    <p><em>Que <code>alphas_cumprod[T-1]</code> sea cercano a 0 es imprescindible para que el proceso inverso esté bien condicionado. Cuando este valor tiende a 0, el proceso forward termina convirtiendo la muestra en ruido gaussiano puro, independientemente del contenido original de la imagen. Esto garantiza que el punto de partida del proceso de generación sea estadísticamente correcto. Si el valor fuese significativamente mayor que 0, la muestra final conservaría información de la imagen original y el modelo estaría generando desde una distribución incorrecta, produciendo imágenes de menor calidad.
+  </em></p>
 </div>
+
 
 
 ## 9. Modelo predictor de ruido
@@ -981,19 +984,19 @@ La red predice <strong>el ruido $\epsilon$</strong> que se añadió, en lugar de
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 9.3:</strong>
-  <p><em>La red predice el ruido ε en lugar de la imagen limpia x0x_0
-x0​ por dos razones principales:
-
-Escala de valores más estable: el ruido ε es siempre N(0,I)\mathcal{N}(0,I)
-N(0,I) independientemente del contenido de x0x_0
-x0​, lo que hace que el objetivo de regresión tenga la misma escala para todos los pasos tt
-t. Si en cambio predijéramos x0x_0
-x0​ directamente, para tt
-t pequeños la señal a predecir varía mucho según la imagen real, dificultando el entrenamiento.
-Conexión directa con la fórmula del reverse process: la actualización μt\mu_t
-μt​ del DDPM se expresa en términos de ϵ^\hat\epsilon
-ϵ^ de forma cerrada y matemáticamente limpia (derivada directamente del ELBO variacional del proceso gaussiano). Predecir x0x_0
-x0​ requeriría una reparametrización adicional, añadiendo complejidad sin ventaja práctica.</em></p>
+  <p><em>La red predice el ruido epsilon en lugar de la imagen limpia x_0 por dos razones principales:</em></p>
+  <ul>
+    <li>
+      <em>
+        <strong>1. Estabilidad del objetivo de regresión:</strong> Si se predijera x_0 directamente, el objetivo de regresión variaría en escala y varianza según la imagen y el paso, dificultando la convergencia, especialmente en los pasos t pequeños donde la imagen aún es muy visible.
+      </em>
+    </li>
+    <li>
+      <em>
+        <strong>2. Derivación directa del ELBO:</strong> La función de pérdida del DDPM se obtiene del límite inferior variacional (ELBO) del proceso gaussiano, y en su parametrización simplificada la pérdida MSE sobre epsilon es la expresión más limpia y matemáticamente directa del objetivo de entrenamiento. Predecir x_0 requeriría una reparametrización adicional sin ventaja práctica demostrada.
+      </em>
+    </li>
+  </ul>
 </div>
 
 
@@ -1126,9 +1129,11 @@ Compara la curva de pérdida del DDPM con la de la GAN (sección 6). ¿Qué dife
 
 <div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
   <strong>Respuesta a la pregunta 10.2:</strong>
-  <p><em>La curva del DDPM muestra una pérdida MSE que desciende de forma suave y monótona desde los primeros pasos, con muy poca varianza entre épocas. Esto refleja que el DDPM tiene un único objetivo bien definido (predicción de ruido) y no hay dinámica adversarial.
-En contraste, las curvas de la GAN son mucho más inestables: la pérdida de D y la de G fluctúan y se "persiguen" mutuamente, porque el equilibrio del juego minimax es un punto silla y cualquier ventaja momentánea de uno perturba al otro. Es habitual ver la pérdida de G subir cuando D mejora y viceversa.
-En la práctica esto significa que entrenar el DDPM es considerablemente más predecible: si la curva baja, el modelo está mejorando. En la GAN una pérdida baja de D puede ser señal de colapso del generador, no de buen entrenamiento.</em></p>
+  <p><em> Mientras que en el DDPM, una pérdida más baja implica directamente mejor predicción de ruido y mejor calidad generativa, en la GAN, el nivel de pérdida no indica por sí solo la calidad de las imágenes generadas.</em></p>
+  
+  <p><em>La curva del DDPM muestra una pérdida MSE que desciende de forma acentuada desde +/- 0.62 en la época 1 hasta estabilizarse en torno a 0.15 a partir de la época 5, manteniéndose prácticamente plana el resto del entrenamiento. Refleja un proceso de optimización bien condicionado con un único objetivo de regresión, sin competencia entre redes.</p></em>
+ 
+  <p><em> Las curvas de la GAN muestran el comportamiento típico del juego minimax, donde la pérdida de G arranca en +/- 2.0, sube hasta +/- 3.5 y después desciende gradualmente hasta +/- 1.28, mientras que la pérdida de D parte de +/- 0.8, baja hasta +/- 0.37 y luego sube hasta +/- 1.05. Las oscilaciones iniciales reflejan el reequilibrio mutuo entre G y D. </em></p>
 </div>
 
 ## 11. Sampling: generación de muestras (reverse process)
@@ -1257,6 +1262,12 @@ plt.show()
 <strong>Pregunta 11.2 [0,25 pts.]:</strong>
 Compara el coste computacional de generar muestras con la GAN frente al DDPM. Para los mismos 64 ejemplos, ¿cuál es más rápido y por qué? ¿Qué consecuencias prácticas tiene esto?
 </div>
+
+<div style="background-color: #fcf2f2; border-left: 5px solid #dfb5b4; padding: 0.5em;">
+  <strong>Respuesta a la pregunta 11.2:</strong>
+  <p><em>Mientras que la GAN genera 64 imágenes con un único pase hacia adelante por el generador (muy poco coste computacional ya que es una red MLP sin iteración), el DDPM requiere T=1000 pasos del *reverse process* para generar el mismo número de imágenes, con una evaluación completa del denoiser (33M de parámetros) en cada paso, lo que supone un mayor coste computacional por batch. Esta diferencia hace que la GAN sea apta para aplicaciones en tiempo real (generación de avatares, síntesis interactiva), mientras que el DDPM estándar no lo es.</p></em>
+</div>
+
 
 ## 12. Comparación cualitativa GAN vs Difusión
 
