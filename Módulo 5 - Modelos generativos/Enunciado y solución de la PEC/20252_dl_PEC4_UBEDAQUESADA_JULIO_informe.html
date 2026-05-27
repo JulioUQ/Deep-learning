@@ -9914,28 +9914,28 @@ A partir de la comparación visual y de tu experiencia entrenando ambos modelos 
 <tbody>
 <tr>
 <td style="border: 1px solid #ccc; padding: 6px;"><strong>Calidad visual</strong></td>
-<td style="border: 1px solid #ccc; padding: 6px;">En esta práctica, la GAN-MLP genera dígitos más nítidos y definidos. Las muestras presentan trazos claros y resultados visualmente convincentes para MNIST.</td>
-<td style="border: 1px solid #ccc; padding: 6px;">Las imágenes generadas son más borrosas y menos definidas. Aunque el modelo aprende la estructura global de los dígitos, pierde detalle debido a la simplicidad de la arquitectura MLP y al número limitado de épocas de entrenamiento.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Media-alta. Los dígitos presentan trazos finos con fondos negros limpios, muy cercanos al estilo visual de MNIST real. Se aprecia un granulado puntual disperso pero las siluetas son reconocibles y bien definidas.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Media. Los trazos son más gruesos y redondeados, y el fondo presenta un ruido residual grisáceo apreciable. Los dígitos son reconocibles pero con una textura más sucia que los generados por la GAN.</td>
 </tr>
 <tr>
 <td style="border: 1px solid #ccc; padding: 6px;"><strong>Diversidad de muestras</strong></td>
-<td style="border: 1px solid #ccc; padding: 6px;">La diversidad es aceptable, aunque las GAN pueden sufrir mode collapse, generando ejemplos similares entre sí.</td>
-<td style="border: 1px solid #ccc; padding: 6px;">El DDPM suele ofrecer mayor diversidad porque aprende progresivamente toda la distribución de datos mediante el proceso de difusión y denoising. Incluso en esta implementación sencilla, las muestras muestran variabilidad razonable.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Moderada con sesgo visible. En el grid se aprecia una clara sobrerrepresentación de los dígitos 7 y 9, con escasa presencia de otros como el 5 o el 6. Indicativo de un <em>mode collapse</em> parcial.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Alta. El grid muestra una distribución notablemente más equilibrada entre clases, con representantes de prácticamente todos los dígitos del 0 al 9 sin concentraciones evidentes.</td>
 </tr>
 <tr>
 <td style="border: 1px solid #ccc; padding: 6px;"><strong>Estabilidad del entrenamiento</strong></td>
-<td style="border: 1px solid #ccc; padding: 6px;">El entrenamiento de las GAN es más inestable, ya que depende del equilibrio entre generador y discriminador. Es común observar oscilaciones o dificultades de convergencia.</td>
-<td style="border: 1px solid #ccc; padding: 6px;">El entrenamiento del DDPM es más estable y predecible. La pérdida desciende de forma suave porque el modelo optimiza una tarea supervisada de predicción de ruido, evitando la dinámica adversaria de las GAN.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Inestable. Loss G sube bruscamente hasta 3.5 en la época 1 antes de descender gradualmente, mientras Loss D oscila antes de estabilizarse. La dinámica adversarial es claramente visible en las curvas.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Muy estable. La MSE desciende de forma suave y monótona desde 0.63 hasta ~0.15 y se mantiene plana desde la época 5 hasta el final, sin ninguna perturbación.</td>
 </tr>
 <tr>
 <td style="border: 1px solid #ccc; padding: 6px;"><strong>Velocidad de generación</strong></td>
-<td style="border: 1px solid #ccc; padding: 6px;">Muy rápida. La imagen se genera en una única pasada por el generador.</td>
-<td style="border: 1px solid #ccc; padding: 6px;">Mucho más lenta. El modelo necesita realizar cientos o miles de pasos iterativos de denoising para generar una sola imagen.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Instantánea. Un único pase forward por el generador produce 64 imágenes en milisegundos.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Lenta. Requiere T=1000 evaluaciones del denoiser en bucle. Como se pudo comprobar en la sección 11, generar 64 muestras lleva varios minutos incluso en la GPU T4.</td>
 </tr>
 <tr>
 <td style="border: 1px solid #ccc; padding: 6px;"><strong>Interpretabilidad de la pérdida</strong></td>
-<td style="border: 1px solid #ccc; padding: 6px;">Más difícil de interpretar. Las pérdidas del generador y discriminador no siempre reflejan directamente la calidad visual de las imágenes.</td>
-<td style="border: 1px solid #ccc; padding: 6px;">Más interpretable. La pérdida corresponde al error de predicción del ruido añadido, por lo que su evolución suele relacionarse mejor con el aprendizaje del modelo.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Baja. Que Loss D ≈ 1.05 y Loss G ≈ 1.28 al final no indica directamente nada sobre la calidad de los dígitos generados; es imprescindible inspeccionar visualmente el grid para evaluarlo.</td>
+<td style="border: 1px solid #ccc; padding: 6px;">Alta. La MSE de 0.15 refleja directamente el error de predicción del ruido, y la estabilización de la curva confirma convergencia. La métrica sola ya describe el estado del entrenamiento.</td>
 </tr>
 </tbody>
 </table>
