@@ -1,127 +1,64 @@
-# **Deep Learning**
+<div align="center">
 
-## 1. Presentación general
+![Curso](https://img.shields.io/badge/CURSO-6A1B9A?style=for-the-badge) ![Ruta de ciencia de datos 3/3](https://img.shields.io/badge/RUTA_DE_CIENCIA_DE_DATOS-3%2F3-8E24AA?style=for-the-badge)
 
-El repositorio introduce los fundamentos del **aprendizaje profundo** dentro del ámbito de la inteligencia artificial y la ciencia de datos. Se centra en modelos capaces de aprender representaciones complejas a partir de datos, especialmente **redes neuronales convolucionales (CNN)** para análisis de imágenes y **redes neuronales recurrentes (RNN)** para series temporales, además de transformadores y modelos generativos.
+# Deep learning
 
-El curso combina teoría, práctica en Python y uso de herramientas como **Google Colab**, con énfasis en el aprendizaje autónomo y la participación en foros.
+Proyectos de aprendizaje profundo con su teoría: redes densas, convolucionales, recurrentes, transformers y modelos generativos con TensorFlow/Keras y PyTorch.
 
----
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat-square&logo=python&logoColor=white) ![TensorFlow · Keras](https://img.shields.io/badge/TensorFlow_%C2%B7_Keras-FF6F00?style=flat-square&logo=tensorflow&logoColor=white) ![PyTorch](https://img.shields.io/badge/PyTorch-EE4C2C?style=flat-square&logo=pytorch&logoColor=white) ![Hugging Face](https://img.shields.io/badge/Hugging_Face-FFD21E?style=flat-square&logo=huggingface&logoColor=white) ![Jupyter](https://img.shields.io/badge/Jupyter-F37626?style=flat-square&logo=jupyter&logoColor=white)
 
-## 2. Objetivos formativos
+<sub>Ruta de ciencia de datos: [1. Estadística básica](https://github.com/JulioUQ/Curso-de-Estadistica-Basica) → [2. Aprendizaje automático](https://github.com/JulioUQ/curso-aprendizaje-automatico) → **3. Deep learning**</sub>
 
-El estudiante desarrollará:
-
-### Conocimientos
-
-- Comprensión del ciclo completo de un proyecto de ciencia de datos.
-- Identificación de técnicas, herramientas y limitaciones del análisis de datos.
-
-### Habilidades
-
-- Diseño de soluciones basadas en inteligencia artificial.
-- Implementación avanzada de modelos y herramientas de programación.
-- Evaluación crítica de soluciones tecnológicas.
-
-### Competencias
-
-- Pensamiento crítico en proyectos de datos.
-- Capacidad para diseñar y gestionar proyectos adaptándose a nuevas tecnologías.
-
-También se espera dominar:
-
-- Arquitecturas y entrenamiento de redes neuronales.
-- CNN, RNN, transformadores y modelos generativos.
-- Principios éticos y de integridad académica.
+</div>
 
 ---
 
-## 3. Contenidos principales
+## Descripción general
 
-El programa se organiza en cinco bloques:
+Tercer paso de la ruta de ciencia de datos, después de [aprendizaje automático](https://github.com/JulioUQ/curso-aprendizaje-automatico). Cada módulo reúne la teoría y un proyecto completo, desde la preparación de los datos hasta la evaluación del modelo.
 
-1. **Redes neuronales artificiales** y fundamentos del deep learning.
-2. **Redes convolucionales (CNN)**: fundamentos, arquitecturas y aplicaciones.
-3. **Redes recurrentes (RNN)** para datos secuenciales.
-4. **Transformadores** y mecanismos de atención.
-5. **Modelos generativos** como autoencoders y GANs.
+## Contenido
 
----
+| Módulo | Proyecto | Técnicas |
+| --- | --- | --- |
+| [1. Redes neuronales](M%C3%B3dulo%201%20-%20Redes%20neuronales%20artificiales) | Fundamentos | Perceptrón, retropropagación, funciones de activación |
+| [2. Redes convolucionales](M%C3%B3dulo%202%20-%20Redes%20neuronales%20convolucionales%20%28CNN%29) | Clasificación de imágenes satelitales (UC Merced) | Red densa, CNN, autoencoders, *transfer learning* con EfficientNetB0, CNN en PyTorch |
+| [3. Redes recurrentes](M%C3%B3dulo%203%20-%20Redes%20neuronales%20recurrentes%20%28RNN%29) | Predicción de series temporales (Electricity Transformer Dataset) | SimpleRNN, LSTM y GRU, predicción multivariante, ajuste con Optuna |
+| [4. Transformers](M%C3%B3dulo%204%20-%20Transformadores) | Generación de texto (WikiText-2) | LSTM frente a Transformer en PyTorch, Hugging Face `transformers` y `datasets` |
+| [5. Modelos generativos](M%C3%B3dulo%205%20-%20Modelos%20generativos) | Generación de imágenes de dígitos (MNIST) | GAN con perceptrones y modelo de difusión (DDPM) |
+| [6. Estado del arte](M%C3%B3dulo%206%20-%20Estado%20del%20arte) | Revisión de avances recientes | — |
 
-## 4. Metodología de aprendizaje
+## Tecnologías y herramientas
 
-El curso sigue un enfoque activo:
+| Ámbito | Herramientas |
+| --- | --- |
+| Frameworks | TensorFlow/Keras, PyTorch, torchvision |
+| NLP | Hugging Face transformers, datasets, evaluate |
+| Optimización | Optuna |
+| Datos y gráficos | pandas, NumPy, matplotlib, seaborn |
 
-- Estudio de materiales teóricos.
-- Resolución de actividades prácticas abiertas.
-- Participación en debates y foros.
-- Búsqueda autónoma de información y argumentación de soluciones.
+## Instalación y uso
 
-Se requieren conocimientos previos de **programación en Python** y **machine learning**, además de comprensión básica de textos técnicos en inglés.
+Con Python 3.12:
 
-Se recomienda consultar los ejemplos prácticos del libro "Deep learning: Principios y fundamentos", disponibles en lenguaje Python, en el siguiente repositorio de código abierto:
-
-- [https://github.com/jcasasr/Libro-Deep-Learning](https://github.com/jcasasr/Libro-Deep-Learning)
-
-Además de realizar el siguiente curso de 3 horas (video + slides) ofrecido para desarrolladores como una rapida introduccion de los fundamentos del deep learning, con TensorFlow.
-
-- https://cloud.google.com/blog/products/ai-machine-learning/learn-tensorflow-and-deep-learning-without-a-phd
-
-Otros son recursos son:
-
-- https://d2l.ai/
-- https://www.deeplearningbook.org/
----
-
-## 5. Sistema de evaluación
-
-La asignatura se aprueba únicamente mediante **evaluación continua**:
-
-### Pruebas principales
-
-- **5 PECs** (pruebas de evaluación continua):    
-    - PEC1–PEC4: 20% cada una
-    - PEC5: 10%
-
-- **Tests teóricos autocorregidos**: 10% final.
-
-### Actividades orales asíncronas
-
-- Asociadas a las PEC1–PEC4.
-- Representan el **20% de cada PEC**.
-- No realizarlas implica **No Presentado** en la PEC correspondiente.
-
-### Entregas fuera de plazo
-
-- Hasta 7 días de retraso con penalización (máximo 7/10).
-- Más tarde: actividad no presentada.
-
----
-
-## 6. Integridad académica y uso de IA
-
-El trabajo debe ser **individual, original y correctamente citado**.  
-El uso indebido de inteligencia artificial, plagio o suplantación puede implicar **suspenso o sanciones disciplinarias**.  
-La universidad puede verificar identidad y autoría mediante pruebas orales o grabaciones.
-
----
-
-## 7. Calendario general
-
-El semestre incluye:
-
-- Tests teóricos en febrero, marzo y abril de 2026.
-- Entregas de PEC entre marzo y junio de 2026.
-- Actividades orales disponibles unos días antes y después de cada PEC.
-
----
-
-# Conclusión
-
- El repositorio proporciona una formación integral en **deep learning aplicado a imágenes y series temporales**, combinando fundamentos teóricos, práctica técnica y evaluación continua rigurosa. Su enfoque prioriza la autonomía del estudiante, el pensamiento crítico y la integridad académica para preparar profesionales capaces de desarrollar proyectos reales de ciencia de datos.
-
- ----
-
-# Requirements
-
+```bash
 py -3.12 -m pip install -r requirements.txt
+jupyter lab
+```
+
+Los módulos 2 a 5 se benefician de una GPU; también se pueden ejecutar en Google Colab.
+
+## Aspectos técnicos destacados
+
+- El mismo problema resuelto con arquitecturas de complejidad creciente para comparar su rendimiento.
+- Uso de Keras y PyTorch en paralelo.
+- Comparación cualitativa entre dos familias de modelos generativos: GAN y difusión.
+
+## Autor
+
+**Julio Úbeda Quesada** · Data Scientist
+
+[![Portfolio](https://img.shields.io/badge/Portfolio-0B2545?style=flat-square&logo=astro&logoColor=white)](https://juliouq.github.io/Portfolio-Web---JulioUQ/es/) [![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=flat-square)](https://www.linkedin.com/in/juliouq/) [![GitHub](https://img.shields.io/badge/GitHub-181717?style=flat-square&logo=github&logoColor=white)](https://github.com/JulioUQ)
+
+<sub>Material elaborado durante el Máster Universitario en Ciencia de Datos.</sub>
