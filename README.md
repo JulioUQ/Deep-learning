@@ -1,6 +1,19 @@
-# **Deep Learning**
+# Prácticas · Redes neuronales y aprendizaje profundo
 
-## 1. Presentación general
+Material y ejercicios académicos sobre fundamentos de redes neuronales y arquitecturas convolucionales.
+
+## Tecnologías
+
+Jupyter y redes neuronales
+
+## Explorar el repositorio
+
+- [`Módulo 1 - Redes neuronales artificiales`](./M%C3%B3dulo%201%20-%20Redes%20neuronales%20artificiales)
+- [`Módulo 2 - Redes neuronales convolucionales (CNN)`](./M%C3%B3dulo%202%20-%20Redes%20neuronales%20convolucionales%20%28CNN%29)
+
+## Documentación
+
+#### 1. Presentación general
 
 El repositorio introduce los fundamentos del **aprendizaje profundo** dentro del ámbito de la inteligencia artificial y la ciencia de datos. Se centra en modelos capaces de aprender representaciones complejas a partir de datos, especialmente **redes neuronales convolucionales (CNN)** para análisis de imágenes y **redes neuronales recurrentes (RNN)** para series temporales, además de transformadores y modelos generativos.
 
@@ -8,22 +21,22 @@ El curso combina teoría, práctica en Python y uso de herramientas como **Goog
 
 ---
 
-## 2. Objetivos formativos
+#### 2. Objetivos formativos
 
 El estudiante desarrollará:
 
-### Conocimientos
+##### Conocimientos
 
 - Comprensión del ciclo completo de un proyecto de ciencia de datos.
 - Identificación de técnicas, herramientas y limitaciones del análisis de datos.
 
-### Habilidades
+##### Habilidades
 
 - Diseño de soluciones basadas en inteligencia artificial.
 - Implementación avanzada de modelos y herramientas de programación.
 - Evaluación crítica de soluciones tecnológicas.
 
-### Competencias
+##### Competencias
 
 - Pensamiento crítico en proyectos de datos.
 - Capacidad para diseñar y gestionar proyectos adaptándose a nuevas tecnologías.
@@ -36,7 +49,7 @@ También se espera dominar:
 
 ---
 
-## 3. Contenidos principales
+#### 3. Contenidos principales
 
 El programa se organiza en cinco bloques:
 
@@ -48,7 +61,7 @@ El programa se organiza en cinco bloques:
 
 ---
 
-## 4. Metodología de aprendizaje
+#### 4. Metodología de aprendizaje
 
 El curso sigue un enfoque activo:
 
@@ -73,11 +86,11 @@ Otros son recursos son:
 - https://www.deeplearningbook.org/
 ---
 
-## 5. Sistema de evaluación
+#### 5. Sistema de evaluación
 
 La asignatura se aprueba únicamente mediante **evaluación continua**:
 
-### Pruebas principales
+##### Pruebas principales
 
 - **5 PECs** (pruebas de evaluación continua):    
     - PEC1–PEC4: 20% cada una
@@ -85,20 +98,20 @@ La asignatura se aprueba únicamente mediante **evaluación continua**:
 
 - **Tests teóricos autocorregidos**: 10% final.
 
-### Actividades orales asíncronas
+##### Actividades orales asíncronas
 
 - Asociadas a las PEC1–PEC4.
 - Representan el **20% de cada PEC**.
 - No realizarlas implica **No Presentado** en la PEC correspondiente.
 
-### Entregas fuera de plazo
+##### Entregas fuera de plazo
 
 - Hasta 7 días de retraso con penalización (máximo 7/10).
 - Más tarde: actividad no presentada.
 
 ---
 
-## 6. Integridad académica y uso de IA
+#### 6. Integridad académica y uso de IA
 
 El trabajo debe ser **individual, original y correctamente citado**.  
 El uso indebido de inteligencia artificial, plagio o suplantación puede implicar **suspenso o sanciones disciplinarias**.  
@@ -106,7 +119,7 @@ La universidad puede verificar identidad y autoría mediante pruebas orales o gr
 
 ---
 
-## 7. Calendario general
+#### 7. Calendario general
 
 El semestre incluye:
 
@@ -116,12 +129,12 @@ El semestre incluye:
 
 ---
 
-# Conclusión
+### Conclusión
 
  El repositorio proporciona una formación integral en **deep learning aplicado a imágenes y series temporales**, combinando fundamentos teóricos, práctica técnica y evaluación continua rigurosa. Su enfoque prioriza la autonomía del estudiante, el pensamiento crítico y la integridad académica para preparar profesionales capaces de desarrollar proyectos reales de ciencia de datos.
 
  ----
 
-# Requirements
+### Requirements
 
 py -3.12 -m pip install -r requirements.txt
